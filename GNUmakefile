@@ -99,14 +99,14 @@ all:
 	   $(OBJDIR)/lib/%.o $(OBJDIR)/fs/%.o $(OBJDIR)/net/%.o \
 	   $(OBJDIR)/user/%.o
 
-BOOT_CFLAGS := $(CFLAGS) -DJOS_KERNEL
-BOOT_LDFLAGS := -N -nostdlib -T boot/boot.ld -m32 -static
+BOOT_CFLAGS := $(CFLAGS) -DJOS_KERNEL -fno-pie
+BOOT_LDFLAGS := -N -nostdlib -T boot/boot.ld -m32 -fno-pie
 
-KERN_CFLAGS := $(CFLAGS) -DJOS_KERNEL -gdwarf-2 -mcmodel=large
+KERN_CFLAGS := $(CFLAGS) -DJOS_KERNEL -gdwarf-2 -mcmodel=large -fno-pie
 KERN_CFLAGS += -DKERNEL_LMA=0x100000
 KERN_CFLAGS += -DKERNEL_VMA=0xFFFF800000000000
 
-KERN_LDFLAGS := -Tkern/kernel.ld -nostdlib -n
+KERN_LDFLAGS := -Tkern/kernel.ld -nostdlib -n -fno-pie
 KERN_LDFLAGS += -Wl,--defsym,KERNEL_LMA=0x100000
 KERN_LDFLAGS += -Wl,--defsym,KERNEL_VMA=0xFFFF800000000000
 KERN_LDFLAGS += -static
