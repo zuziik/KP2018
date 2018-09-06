@@ -12,13 +12,7 @@
 /* These variables are set in mem_init() */
 size_t npages;
 struct page_info *pages;                 /* Physical page state array */
-static struct page_info *page_free_list;      /* Free list of physical pages */
-static struct page_info *huge_page_free_list; /* Free list of physical pages */
-
-
-
-/*************************SMALL_PAGE_FREE_LIST FIX IN BOTTOM FUNCTION */////
-
+static struct page_info *page_free_list; /* Free list of physical pages */
 
 /***************************************************************
  * Set up memory mappings above UTOP.
@@ -58,7 +52,13 @@ static void *boot_alloc(uint32_t n)
      *
      * LAB 1: Your code here.
      */
-    nextfree = ROUNDUP(nextfree + n, PAGE_SIZE);        
+    nextfree = ROUNDUP(nextfree + n, PAGE_SIZE);
+    
+    // TODO: Panic if out of memory: code below does not work
+    // if ((size_t) nextfree >= npages * PAGE_SIZE) {
+    //     panic ("Boot alloc out of memory!");
+    // }
+    
     return nextfree;
 }
 
@@ -92,7 +92,7 @@ void mem_init(struct boot_info *boot_info)
     npages = highest_addr / PAGE_SIZE;
 
     /* Remove this line when you're ready to test this function. */
-    panic("mem_init: This function is not finished\n");
+    // panic("mem_init: This function is not finished\n");
 
     /*********************************************************************
      * Allocate an array of npages 'struct page_info's and store it in 'pages'.
@@ -100,16 +100,12 @@ void mem_init(struct boot_info *boot_info)
      * physical page, there is a corresponding struct page_info in this array.
      * 'npages' is the number of physical pages in memory.  Your code goes here.
      */
-
-    pages->pp_link = NULL;
-    pages->is_huge = 0;
-    pages->pp_ref = 0;
+    
+    pages = boot_alloc(sizeof(struct page_info)*npages);
+    
     for (i = 0; i < npages; i++) {
-        struct page_info *new_page;
-        new_page->is_huge = 0;
-        new_page->pp_ref = 0;
-        new_page->pp_link = pages;
-        pages = new_page;
+        pages[i].pp_link = NULL;
+        pages[i].pp_ref = 0;
     }
 
     /*********************************************************************
@@ -125,8 +121,6 @@ void mem_init(struct boot_info *boot_info)
 
     /* We will set up page tables here in lab 2. */
 }
-
-
 
 /***************************************************************
  * Tracking of physical pages.
@@ -145,7 +139,10 @@ void page_init(struct boot_info *boot_info)
     struct page_info *page;
     struct mmap_entry *entry;
     uintptr_t pa, end;
-    size_t i;
+    pa = 0;
+    size_t i, tmp;
+    tmp = 0;
+    struct page_info *prev = NULL;
 
     /*
      * The example code here marks all physical pages as free.
@@ -167,28 +164,53 @@ void page_init(struct boot_info *boot_info)
     entry = (struct mmap_entry *)KADDR(boot_info->mmap_addr);
     end = PADDR(boot_alloc(0));
 
+    // cprintf("------------------mmap_len %08x\n", boot_info->mmap_len);
+
+    // for (i = 0; i < boot_info->mmap_len; ++i, ++entry) {
+    //     for (pa = entry->addr; pa < entry->addr + entry->len; pa += PAGE_SIZE) {
+    //         page = pa2page(pa);
+
+    //         page->pp_ref = 0;
+    //         page->pp_link = page_free_list;
+    //         page_free_list = page;
+    //     }
+    // }
+
+                // // First in list is first in mem
+                // if (page_free_list == NULL) {
+                //     page->pp_link = NULL;
+                //     page_free_list = page;
+                //     prev = page;
+                // } else {
+                //     page->pp_link = NULL;
+                //     prev->pp_link = page;
+                //     prev = page;
+                // }
+
+    
+    // Our version would be:
+    page_free_list = NULL;
     for (i = 0; i < boot_info->mmap_len; ++i, ++entry) {
-        for (pa = entry->addr; pa < entry->addr + entry->len;
-            pa += PAGE_SIZE) {
-            page = pa2page(pa);
-            page->pp_ref = 0;
-            page->is_huge = 0;
-
-            // Check which address shouldnt be free
-            if (!(pa == 0 || (pa >= IO_PHYS_MEM && pa < EXT_PHYS_MEM))) {
-                page->pp_link = page_free_list;
-                page_free_list = page;
-            } else if (pa >= EXT_PHYS_MEM) {
-                // Number 4
-
-
+        for (pa = entry->addr; pa < entry->addr + entry->len; pa += PAGE_SIZE) {
+            if (entry->type != MMAP_FREE) {
+                continue;
             }
 
+            page = pa2page(pa);
+            page->pp_ref = 0;
+
+            // Check which address shouldnt be free
+            if (pa != 0 && (pa < IO_PHYS_MEM || pa > end)) {
+                tmp += 1;
+
+                page->pp_link = page_free_list;
+                page_free_list = page;
+            } 
         }
-
     }
-
-    // ADD MERGE LOOP
+    cprintf("npages: %08x\n", npages);
+    cprintf("free  : %08x\n", tmp);
+    cprintf("-------------------FINISHED____________________\n");
 }
 
 /*
@@ -201,8 +223,8 @@ void page_init(struct boot_info *boot_info)
  * page_free can check for double-free bugs.
  *
  * Returns NULL if out of free memory.
-     *
-     * Hint: use page2kva and memset
+ *
+ * Hint: use page2kva and memset
  *
  * 2MB huge pages:
  * Come back later to extend this function to support 2MB huge page allocation.
@@ -210,8 +232,28 @@ void page_init(struct boot_info *boot_info)
  */
 struct page_info *page_alloc(int alloc_flags)
 {
-    /* Fill this function in */
-    return 0;
+    struct page_info *page;
+
+    // Out of memory
+    if (page_free_list == NULL) {
+        return NULL;
+    }
+
+    // Get the first free page, update page_free_list
+    page = page_free_list;
+    if (page_free_list->pp_link == NULL) {
+        page_free_list = NULL;
+    } else {
+        page_free_list = page_free_list->pp_link;
+    }
+    page->pp_link = NULL;
+
+    // Fill memory with 0 if flags are set
+    if (alloc_flags & ALLOC_ZERO)
+        memset(page2kva(page), 0, PAGE_SIZE);
+    return page;
+
+    //TODO add 2MB pages support
 }
 
 /*
@@ -223,31 +265,19 @@ void page_free(struct page_info *pp)
     /* Fill this function in
      * Hint: You may want to panic if pp->pp_ref is nonzero or
      * pp->pp_link is not NULL. */
+    if (pp->pp_link != NULL) {
+        panic("Failed to free a page with pp_link != NULL");
+    }
+    
+    if (pp->pp_ref != 0) {
+        panic("Failed to free a page with nonzero refcount");        
+    }
+
+    pp->pp_link = page_free_list;
+    page_free_list = pp;
+
+    //TODO 2MB pages support
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /*
  * Decrement the reference count on a page,
