@@ -140,9 +140,7 @@ void page_init(struct boot_info *boot_info)
     struct mmap_entry *entry;
     uintptr_t pa, end;
     pa = 0;
-    size_t i, tmp;
-    tmp = 0;
-    struct page_info *prev = NULL;
+    size_t i;
 
     /*
      * The example code here marks all physical pages as free.
@@ -164,53 +162,43 @@ void page_init(struct boot_info *boot_info)
     entry = (struct mmap_entry *)KADDR(boot_info->mmap_addr);
     end = PADDR(boot_alloc(0));
 
-    // cprintf("------------------mmap_len %08x\n", boot_info->mmap_len);
+    cprintf("MPENTRY_PADDR %08x\n", MPENTRY_PADDR);
+    cprintf("IO_PHYS_MEM   %08x\n", IO_PHYS_MEM);
+    cprintf("EXT_PHYS_MEM  %08x\n", EXT_PHYS_MEM);
+    cprintf("KERNEL_LMA    %08x\n", KERNEL_LMA);
+    cprintf("end           %08x\n", end);
+    cprintf("-------------------START-------------------\n");
 
-    // for (i = 0; i < boot_info->mmap_len; ++i, ++entry) {
-    //     for (pa = entry->addr; pa < entry->addr + entry->len; pa += PAGE_SIZE) {
-    //         page = pa2page(pa);
-
-    //         page->pp_ref = 0;
-    //         page->pp_link = page_free_list;
-    //         page_free_list = page;
-    //     }
-    // }
-
-                // // First in list is first in mem
-                // if (page_free_list == NULL) {
-                //     page->pp_link = NULL;
-                //     page_free_list = page;
-                //     prev = page;
-                // } else {
-                //     page->pp_link = NULL;
-                //     prev->pp_link = page;
-                //     prev = page;
-                // }
-
-    
     // Our version would be:
     page_free_list = NULL;
     for (i = 0; i < boot_info->mmap_len; ++i, ++entry) {
+        if (entry->type != MMAP_FREE) {
+            continue;
+        }
         for (pa = entry->addr; pa < entry->addr + entry->len; pa += PAGE_SIZE) {
-            if (entry->type != MMAP_FREE) {
-                continue;
-            }
-
             page = pa2page(pa);
             page->pp_ref = 0;
 
+            
             // Check which address shouldnt be free
-            if (pa != 0 && (pa < IO_PHYS_MEM || pa > end)) {
-                tmp += 1;
+            // if (pa != 0 && pa != MPENTRY_PADDR && pa < IO_PHYS_MEM) {
+            // if (pa != 0 && pa != MPENTRY_PADDR && !(pa >= IO_PHYS_MEM && pa <= EXT_PHYS_MEM)) { // && pa < EXT_PHYS_MEM
+            //     if (!(pa >= KERNEL_LMA && pa <= end)) { // && pa < end
+            //         page->pp_link = page_free_list;
+            //         page_free_list = page;
+            //     }
+            // } 
 
+            // Check which address shouldnt be free
+            if (!(pa == 0 || pa == MPENTRY_PADDR || 
+                 (pa >= IO_PHYS_MEM && pa <= EXT_PHYS_MEM) ||
+                 (pa >= KERNEL_LMA && pa < end) ||
+                 pa >= end)) {
                 page->pp_link = page_free_list;
                 page_free_list = page;
             } 
         }
     }
-    cprintf("npages: %08x\n", npages);
-    cprintf("free  : %08x\n", tmp);
-    cprintf("-------------------FINISHED____________________\n");
 }
 
 /*
@@ -430,43 +418,43 @@ static void check_page_alloc(void)
 
     cprintf("[4K] check_page_alloc() succeeded!\n");
 
-    /* test allocation of huge page */
-    pp0 = pp1 = php0 = 0;
-    assert((pp0 = page_alloc(0)));
-    assert((php0 = page_alloc(ALLOC_HUGE)));
-    assert((pp1 = page_alloc(0)));
-    assert(pp0);
-    assert(php0 && php0 != pp0);
-    assert(pp1 && pp1 != php0 && pp1 != pp0);
-    assert(0 == (page2pa(php0) % 512*PAGE_SIZE));
-    if (page2pa(pp1) > page2pa(php0)) {
-        assert(page2pa(pp1) - page2pa(php0) >= 512*PAGE_SIZE);
-    }
+    // /* test allocation of huge page */
+    // pp0 = pp1 = php0 = 0;
+    // assert((pp0 = page_alloc(0)));
+    // assert((php0 = page_alloc(ALLOC_HUGE)));
+    // assert((pp1 = page_alloc(0)));
+    // assert(pp0);
+    // assert(php0 && php0 != pp0);
+    // assert(pp1 && pp1 != php0 && pp1 != pp0);
+    // assert(0 == (page2pa(php0) % 512*PAGE_SIZE));
+    // if (page2pa(pp1) > page2pa(php0)) {
+    //     assert(page2pa(pp1) - page2pa(php0) >= 512*PAGE_SIZE);
+    // }
 
-    /* free and reallocate 2 huge pages */
-    page_free(php0);
-    page_free(pp0);
-    page_free(pp1);
-    php0 = php1 = pp0 = pp1 = 0;
-    assert((php0 = page_alloc(ALLOC_HUGE)));
-    assert((php1 = page_alloc(ALLOC_HUGE)));
+    // /* free and reallocate 2 huge pages */
+    // page_free(php0);
+    // page_free(pp0);
+    // page_free(pp1);
+    // php0 = php1 = pp0 = pp1 = 0;
+    // assert((php0 = page_alloc(ALLOC_HUGE)));
+    // assert((php1 = page_alloc(ALLOC_HUGE)));
 
-    /* Is the inter-huge-page difference right? */
-    if (page2pa(php1) > page2pa(php0)) {
-        assert(page2pa(php1) - page2pa(php0) >= 512*PAGE_SIZE);
-    } else {
-        assert(page2pa(php0) - page2pa(php1) >= 512*PAGE_SIZE);
-    }
+    // /* Is the inter-huge-page difference right? */
+    // if (page2pa(php1) > page2pa(php0)) {
+    //     assert(page2pa(php1) - page2pa(php0) >= 512*PAGE_SIZE);
+    // } else {
+    //     assert(page2pa(php0) - page2pa(php1) >= 512*PAGE_SIZE);
+    // }
 
-    /* free the huge pages we took */
-    page_free(php0);
-    page_free(php1);
+    // /* free the huge pages we took */
+    // page_free(php0);
+    // page_free(php1);
 
-    /* number of free pages should be the same */
-    nfree = total_free;
-    for (pp = page_free_list; pp; pp = pp->pp_link)
-        --nfree;
-    assert(nfree == 0);
+    // /* number of free pages should be the same */
+    // nfree = total_free;
+    // for (pp = page_free_list; pp; pp = pp->pp_link)
+    //     --nfree;
+    // assert(nfree == 0);
 
-    cprintf("[2M] check_page_alloc() succeeded!\n");
+    // cprintf("[2M] check_page_alloc() succeeded!\n");
 }
