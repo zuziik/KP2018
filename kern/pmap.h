@@ -21,6 +21,7 @@ struct env;
 extern char bootstacktop[], bootstack[];
 
 extern struct page_info *pages;
+extern struct page_info *page_free_list;
 extern size_t npages;
 extern struct page_table *kern_pml4;
 
