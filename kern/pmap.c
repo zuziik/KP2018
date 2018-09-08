@@ -1,42 +1,10 @@
-/*
- * ----------------------------------------------------------------------------
- * LAB 1
- * Kernel Programming 2018 @VU
- * by Matthijs Jansen and Zuzana Hromcova
- * Version from Friday, September 7th
- * ----------------------------------------------------------------------------
- * 
- * Remarks:
- * 
- * This version works with normal pages and huge pages.
- * In this version lab 1 should be completely and correctly implemented.
- *
- * There are 3 new helper functions at the top of this file.
- *  - initial merge: after page_init(), tries to create as many huge pages
- *    as possible in stead of a lot of normal pages
- *  - delete from free: when using alloc_page(), delete the page you want
- *    to alloc from the free list
- *  - merge after free: if a normal page is freed in free_page(), this function
- *    will check if the potential huge page it resides in can be created.
- *
- * Only 1 free list is used with markers to differentiate normal and huge pages
- * from each other, see /inc/paging.h. This is done mostly because the test cases
- * at the bottom of this file can only handle 1 free list and rewriting those test
- * cases would be much work.
- *
- * The free list is also transformed in a doubly linked list (so with next and previous)
- * since this would make a 1 free list implementation much easier.d
- *
- * An is_available flag is also used to check if a page is in the free list or not 
- * for a speed boost.
- */
-
 /* See COPYRIGHT for copyright information. */
 
 #include <inc/error.h>
 #include <inc/string.h>
 #include <inc/assert.h>
 #include <inc/paging.h>
+#include <inc/elf.h>
 
 #include <inc/x86-64/asm.h>
 
@@ -45,6 +13,7 @@
 
 /* These variables are set in mem_init() */
 size_t npages;
+struct page_table *kern_pml4;            /* Kernel's initial PML4 */
 struct page_info *pages;                 /* Physical page state array */
 struct page_info *page_free_list; /* Free list of physical pages */
 
@@ -52,8 +21,16 @@ struct page_info *page_free_list; /* Free list of physical pages */
  * Set up memory mappings above UTOP.
  ***************************************************************/
 
+static void boot_map_region(struct page_table *pml4, uintptr_t va, size_t size,
+    physaddr_t pa, uint64_t perm);
+static void boot_map_kernel(struct elf *elf_hdr);
 static void check_page_free_list(bool only_low_memory);
 static void check_page_alloc(void);
+static void check_kern_pml4(void);
+static physaddr_t check_va2pa(struct page_table *pml4, uintptr_t va);
+static void check_page(void);
+static void check_page_installed_pml4(void);
+static void check_wx(void);
 
 /* This simple physical memory allocator is used only while JOS is setting up
  * its virtual memory system.  page_alloc() is the real allocator.
@@ -123,8 +100,21 @@ void mem_init(struct boot_info *boot_info)
 
     npages = highest_addr / PAGE_SIZE;
 
-    /* Remove this line when you're ready to test this function. */
-    // panic("mem_init: This function is not finished\n");
+    /*********************************************************************
+     * Create the initial page tables.
+     */
+    kern_pml4 = boot_alloc(sizeof *kern_pml4);
+    memset(kern_pml4, 0, sizeof *kern_pml4);
+
+    /*********************************************************************
+     * Recursively insert PD in itself as a page table, to form a virtual page
+     * table at virtual address USER_PML4.
+     * (For now, you don't have understand the greater purpose of the following
+     * line.)
+     * Permissions: kernel R, user R.
+     */
+    kern_pml4->entries[PML4_INDEX(USER_PML4)] =
+        PADDR(kern_pml4) | PAGE_PRESENT | PAGE_USER | PAGE_NO_EXEC;
 
     /*********************************************************************
      * Allocate an array of npages 'struct page_info's and store it in 'pages'.
@@ -132,7 +122,6 @@ void mem_init(struct boot_info *boot_info)
      * physical page, there is a corresponding struct page_info in this array.
      * 'npages' is the number of physical pages in memory.  Your code goes here.
      */
-    
     pages = boot_alloc(sizeof(struct page_info)*npages);
     
     for (i = 0; i < npages; i++) {
@@ -149,12 +138,81 @@ void mem_init(struct boot_info *boot_info)
      * memory management will go through the page_* functions. In particular, we
      * can now map memory using boot_map_region or page_insert.
      */
+
+    cprintf("[MEM_INIT] END\n");
     page_init(boot_info);
-
+    cprintf("[PAGE_INIT] END\n");
     check_page_free_list(1);
+    cprintf("[CHECK_PAGE_FREE_LIST] END\n");
     check_page_alloc();
+    cprintf("[CHECK_PAGE_ALLOC] END\n");
+    cprintf("------------- LAB 2 -------------\n");
+    check_page();
+    cprintf("[CHECK_PAGE] END\n");
 
-    /* We will set up page tables here in lab 2. */
+    /*********************************************************************
+     * Now we set up virtual memory.
+     *********************************************************************/
+
+    /*********************************************************************
+     * Map 'pages' read-only by the user at linear address USER_PAGES
+     * Permissions:
+     *    - the new image at USER_PAGES -- kernel R, user R
+     *      (ie. perm = PAGE_USER | PAGE_PRESENT)
+     *    - pages itself -- kernel RW, user NONE
+     * Your code goes here:
+     */
+
+    /*********************************************************************
+     * Use the physical memory that 'bootstack' refers to as the kernel
+     * stack.  The kernel stack grows down from virtual address KSTACK_TOP.
+     * We consider the entire range from [KSTACK_TOP-PTSIZE, KSTACK_TOP)
+     * to be the kernel stack, but break this into two pieces:
+     *     * [KSTACK_TOP-KSTACK_SIZE, KSTACK_TOP) -- backed by physical memory
+     *     * [KSTACK_TOP-PTSIZE, KSTACK_TOP-KSTACK_SIZE) -- not backed; so if
+     *       the kernel overflows its stack, it will fault rather than
+     *       overwrite memory.  Known as a "guard page".
+     *     Permissions: kernel RW, user NONE
+     *
+     * Your code goes here:
+     */
+
+    /* Note: don't map anything between KSTACKTOP - PTSIZE and
+     * KSTACKTOP - KTSIZE leaving this as guard region.
+     */
+
+    /*********************************************************************
+     * Map all of physical memory at KERNBASE.
+     * Ie.  the VA range [KERNBASE, 2^32) should map to
+     *      the PA range [0, 2^32 - KERNBASE)
+     * We might not have 2^32 - KERNBASE bytes of physical memory, but
+     * we just set up the mapping anyway.
+     * Permissions: kernel RW, user NONE
+     * Your code goes here:
+     */
+    boot_map_kernel((void *)(KERNEL_VMA + (uintptr_t)boot_info->elf_hdr));
+
+    /* Check that the initial page directory has been set up correctly. */
+    check_kern_pml4();
+
+    /* Enable the NX-bit. */
+
+    /* Switch from the minimal entry page directory to the full kern_pml4
+     * page table we just created.  Our instruction pointer should be
+     * somewhere between KERNBASE and KERNBASE+4MB right now, which is
+     * mapped the same way by both page tables.
+     *
+     * If the machine reboots at this point, you've probably set up your
+     * kern_pml4 wrong. */
+    load_pml4((void *)PADDR(kern_pml4));
+
+    check_page_free_list(0);
+
+    /* Some more checks, only possible after kern_pml4 is installed. */
+    check_page_installed_pml4();
+ 
+    /* Check if the kernel page tables fulfil W^X. */
+    check_wx();
 }
 
 /***************************************************************
@@ -321,8 +379,7 @@ void page_free(struct page_info *pp)
     int i, j;
     j = 0;
     
-    /* Fill this function in
-     * Hint: You may want to panic if pp->pp_ref is nonzero or
+    /* Hint: You may want to panic if pp->pp_ref is nonzero or
      * pp->pp_link is not NULL. */
     if (pp->pp_link != NULL) {
         panic("Failed to free a page with pp_link != NULL");
@@ -360,6 +417,144 @@ void page_decref(struct page_info* pp)
 {
     if (--pp->pp_ref == 0)
         page_free(pp);
+}
+
+/*
+ * Map [va, va+size) of virtual address space to physical [pa, pa+size)
+ * in the page table rooted at pgdir.  Size is a multiple of PAGE_SIZE.
+ * Use permission bits perm|PAGE_PRESENT for the entries.
+ *
+ * This function is only intended to set up the ``static'' mappings
+ * above UTOP. As such, it should *not* change the pp_ref field on the
+ * mapped pages.
+ *
+ * Hint: the TA solution uses page_walk
+ */
+static void boot_map_region(struct page_table *pml4, uintptr_t va, size_t size,
+    physaddr_t pa, uint64_t perm)
+{
+    /* Fill this function in. */
+}
+
+/*
+ * Map the identity mapping as RW and parse the ELF header of the kernel and
+ * map the program segments with the appropriate permissions.
+ */
+static void boot_map_kernel(struct elf *elf_hdr)
+{
+    struct elf_proghdr *prog_hdr = (struct elf_proghdr *)((char *)elf_hdr +
+        elf_hdr->e_phoff);
+
+    /* Fill this function in. */
+}
+
+/*
+ * Given 'pml4', a pointer to a PML4, page_walk returns
+ * a pointer to the page table entry (PTE) for linear address 'va'.
+ * This requires walking the four-level page table structure.
+ *
+ * The relevant page table page might not exist yet.
+ * If this is true, and create == false, then page_walk returns NULL.
+ * Otherwise, page_walk allocates a new page table page with page_alloc.
+ *    - If the allocation fails, page_walk returns NULL.
+ *    - Otherwise, the new page's reference count is incremented,
+ *  the page is cleared,
+ *  and page_walk returns a pointer into the new page table page.
+ *
+ * Hint 1: you can turn a struct page_info* into the physical address of the
+ * page it refers to with page2pa() from kern/pmap.h.
+ *
+ * Hint 2: the MMU checks permission bits in all the page table levels, so it
+ * is safe to leave permissions in the page more permissive than strictly
+ * necessary.
+ *
+ * Hint 3: look at inc/x86-64/paging.h for useful macros that manipulate page
+ * table and page directory entries.
+ */
+physaddr_t *page_walk(struct page_table *pml4, const void *va, int create)
+{
+    /* Fill this function in. */
+    return NULL;
+}
+
+/*
+ * Map the physical page 'pp' at virtual address 'va'.
+ * The permissions (the low 12 bits) of the page table entry
+ * should be set to 'perm|PAGE_PRESENT'.
+ *
+ * Requirements
+ *   - If there is already a page mapped at 'va', it should be page_remove()d.
+ *   - If necessary, on demand, a page table should be allocated and inserted
+ *     into 'pgdir'.
+ *   - pp->pp_ref should be incremented if the insertion succeeds.
+ *   - The TLB must be invalidated if a page was formerly present at 'va'.
+ *
+ * Corner-case hint: Make sure to consider what happens when the same
+ * pp is re-inserted at the same virtual address in the same pgdir.
+ * However, try not to distinguish this case in your code, as this
+ * frequently leads to subtle bugs; there's an elegant way to handle
+ * everything in one code path.
+ *
+ * RETURNS:
+ *   0 on success
+ *   -E_NO_MEM, if page table couldn't be allocated
+ *
+ * Hint: The TA solution is implemented using page_walk, page_remove,
+ * and page2pa.
+ */
+int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int perm)
+{
+    /* Fill this function in. */
+    return 0;
+}
+
+/*
+ * Return the page mapped at virtual address 'va'.
+ * If pte_store is not zero, then we store in it the address
+ * of the pte for this page.  This is used by page_remove and
+ * can be used to verify page permissions for syscall arguments,
+ * but should not be used by most callers.
+ *
+ * Return NULL if there is no page mapped at va.
+ *
+ * Hint: the TA solution uses page_walk and pa2page.
+ */
+struct page_info *page_lookup(struct page_table *pml4, void *va,
+    physaddr_t **entry_store)
+{
+    /* Fill this function in. */
+    return NULL;
+}
+
+/*
+ * Unmaps the physical page at virtual address 'va'.
+ * If there is no physical page at that address, silently does nothing.
+ *
+ * Details:
+ *   - The ref count on the physical page should decrement.
+ *   - The physical page should be freed if the refcount reaches 0.
+ *   - The pg table entry corresponding to 'va' should be set to 0.
+ *     (if such a PTE exists)
+ *   - The TLB must be invalidated if you remove an entry from
+ *     the page table.
+ *
+ * Hint: The TA solution is implemented using page_lookup,
+ *  tlb_invalidate, and page_decref.
+ */
+void page_remove(struct page_table *pml4, void *va)
+{
+    /* Fill this function in. */
+}
+
+/*
+ * Invalidate a TLB entry, but only if the page tables being
+ * edited are the ones currently in use by the processor.
+ */
+void tlb_invalidate(struct page_table *pml4, void *va)
+{
+    /* Flush the entry only if we're modifying the current address space. */
+    /* Note: for now, there is only one address space, so always invalidate. */
+    flush_page(va);
 }
 
 /***************************************************************
@@ -503,7 +698,7 @@ static void check_page_alloc(void)
 
     cprintf("[4K] check_page_alloc() succeeded!\n");
 
-    // /* test allocation of huge page */
+    /* test allocation of huge page */
     pp0 = pp1 = php0 = 0;
     assert((pp0 = page_alloc(0)));
     assert((php0 = page_alloc(ALLOC_HUGE)));
@@ -543,3 +738,440 @@ static void check_page_alloc(void)
 
     cprintf("[2M] check_page_alloc() succeeded!\n");
 }
+
+/*
+ * Checks that the kernel part of virtual address space
+ * has been setup roughly correctly (by mem_init()).
+ *
+ * This function doesn't test every corner case,
+ * but it is a pretty good sanity check.
+ */
+static void check_kern_pml4(void)
+{
+    uint32_t i, n;
+    struct page_table *pml4;
+
+    pml4 = kern_pml4;
+
+    /* check pages array */
+    n = ROUNDUP(npages*sizeof(struct page_info), PAGE_SIZE);
+    for (i = 0; i < n; i += PAGE_SIZE)
+        assert(check_va2pa(pml4, USER_PAGES + i) == PADDR(pages) + i);
+
+    /* check phys mem */
+    for (i = 0; i < npages * PAGE_SIZE; i += PAGE_SIZE)
+        assert(check_va2pa(pml4, KERNEL_VMA + i) == i);
+
+    /* check kernel stack */
+    for (i = 0; i < KSTACK_SIZE; i += PAGE_SIZE)
+        assert(check_va2pa(pml4, KSTACK_TOP - KSTACK_SIZE + i) == (physaddr_t)bootstack + i);
+    assert(check_va2pa(pml4, KSTACK_TOP - KSTACK_SIZE - PAGE_SIZE) == ~0);
+
+    /* check PML permissions */
+    for (i = 0; i < PAGE_TABLE_ENTRIES; i++) {
+        switch (i) {
+        case PML4_INDEX(USER_PML4):
+        case PML4_INDEX(KSTACK_TOP-1):
+        case PML4_INDEX(USER_PAGES):
+            assert(pml4->entries[i] & PAGE_PRESENT);
+            break;
+        case PML4_INDEX(KERNEL_VMA):
+            assert(pml4->entries[i] & PAGE_PRESENT);
+            assert(pml4->entries[i] & PAGE_WRITE);
+            break;
+        default:
+            assert(pml4->entries[i] == 0);
+        }
+    }
+    cprintf("check_kern_pml4() succeeded!\n");
+}
+
+/*
+ * This function returns the physical address of the page containing 'va',
+ * defined by the page directory 'pgdir'.  The hardware normally performs
+ * this functionality for us!  We define our own version to help check
+ * the check_kern_pml4() function; it shouldn't be used elsewhere.
+ */
+static physaddr_t check_va2pa(struct page_table *pml4, uintptr_t va)
+{
+    struct page_table *pdpt, *page_dir, *page_table;
+    physaddr_t *entry;
+
+    entry = pml4->entries + PML4_INDEX(va);
+
+    if (!(*entry & PAGE_PRESENT))
+        return ~0;
+
+    pdpt = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = pdpt->entries + PDPT_INDEX(va);
+
+    if (!(*entry & PAGE_PRESENT))
+        return ~0;
+
+    page_dir = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = page_dir->entries + PAGE_DIR_INDEX(va);
+
+    if (!(*entry & PAGE_PRESENT))
+        return ~0;
+
+    page_table = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = page_table->entries + PAGE_TABLE_INDEX(va);
+
+    if (!(*entry & PAGE_PRESENT))
+        return ~0;
+
+    return PAGE_ADDR(*entry);
+}
+
+/* Check page_insert, page_remove, &c */
+static void check_page(void)
+{
+    struct page_table *pdpt, *page_dir, *page_table;
+    physaddr_t *entry, *entry2;
+    struct page_info *pages[5];
+    struct page_info *pp, *pp0, *pp1, *pp2;
+    struct page_info *fl;
+    void *va;
+    size_t i, j;
+    //extern pde_t entry_pgdir[];
+
+    /* should be able to allocate pages */
+    for (i = 0; i < 5; ++i) {
+        pages[i] = page_alloc(0);
+    }
+
+    for (i = 0; i < 5; ++i) {
+        assert(pages[i]);
+
+        for (j = 0; j < i; ++j) {
+            assert(pages[i] != pages[j]);
+        }
+    }
+
+    /* temporarily steal the rest of the free pages */
+    fl = page_free_list;
+    page_free_list = 0;
+
+    /* should be no free memory */
+    assert(!page_alloc(0));
+
+    /* there is no page allocated at address 0 */
+    assert(page_lookup(kern_pml4, (void *) 0x0, &entry2) == NULL);
+
+    /* there is no free memory, so we can't allocate a page table */
+    assert(page_insert(kern_pml4, pages[3], 0x0, PAGE_WRITE) < 0);
+
+    /* free sufficient pages to allocate a pdpt, page directory and page table. */
+    page_free(pages[0]);
+    page_free(pages[1]);
+    page_free(pages[2]);
+
+    assert(page_insert(kern_pml4, pages[3], 0x0, PAGE_WRITE) == 0);
+    assert(check_va2pa(kern_pml4, 0x0) == page2pa(pages[3]));
+
+    for (i = 0; i < 4; ++i)
+        assert(pages[i]->pp_ref == 1);
+
+    /* should be able to map pages[4] at PAGE_SIZE because there already is a page table. */
+    assert(page_insert(kern_pml4, pages[4], (void*) PAGE_SIZE, PAGE_WRITE) == 0);
+    assert(check_va2pa(kern_pml4, PAGE_SIZE) == page2pa(pages[4]));
+    assert(pages[4]->pp_ref == 1);
+
+    /* should be no free memory */
+    assert(!page_alloc(0));
+
+    /* should be able to map pages[4] at PAGE_SIZE because it's already there */
+    assert(page_insert(kern_pml4, pages[4], (void*) PAGE_SIZE, PAGE_WRITE) == 0);
+    assert(check_va2pa(kern_pml4, PAGE_SIZE) == page2pa(pages[4]));
+    assert(pages[4]->pp_ref == 1);
+
+    /* pages[4] should NOT be on the free list
+     * could happen in ref counts are handled sloppily in page_insert */
+    assert(!page_alloc(0));
+
+    /* get a pointer to the entry in the page table. */
+    entry = kern_pml4->entries;
+    assert(*entry & PAGE_PRESENT);
+    pdpt = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = pdpt->entries;
+    assert(*entry & PAGE_PRESENT);
+    page_dir = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = page_dir->entries;
+    assert(*entry & PAGE_PRESENT);
+    page_table = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = page_table->entries + PAGE_TABLE_INDEX(PAGE_SIZE);
+    assert(*entry & PAGE_PRESENT);
+
+    /* check that page_walk returns a pointer to the pte */
+    assert(page_walk(kern_pml4, (void*)PAGE_SIZE, 0) == entry);
+
+    /* should be able to change permissions too. */
+    assert(page_insert(kern_pml4, pages[4], (void*) PAGE_SIZE, PAGE_WRITE | PAGE_USER) == 0);
+    assert(check_va2pa(kern_pml4, PAGE_SIZE) == page2pa(pages[4]));
+    assert(pages[4]->pp_ref == 1);
+    assert(*page_walk(kern_pml4, (void*) PAGE_SIZE, 0) & PAGE_USER);
+    assert(*entry & PAGE_USER);
+
+    /* should be able to remap with fewer permissions */
+    assert(page_insert(kern_pml4, pages[4], (void*) PAGE_SIZE, PAGE_WRITE) == 0);
+    assert(*page_walk(kern_pml4, (void*) PAGE_SIZE, 0) & PAGE_WRITE);
+    assert(!(*page_walk(kern_pml4, (void*) PAGE_SIZE, 0) & PAGE_USER));
+
+    /* Should not be able to map at PTSIZE because need free page for page
+     * table. */
+    assert(page_insert(kern_pml4, pages[0], (void*)PAGE_TABLE_SPAN, PAGE_WRITE) < 0);
+
+    /* insert pages[3] at PAGE_SIZE (replacing pages[4]) */
+    assert(page_insert(kern_pml4, pages[3], (void*) PAGE_SIZE, PAGE_WRITE) == 0);
+    assert(!(*page_walk(kern_pml4, (void*) PAGE_SIZE, 0) & PAGE_USER));
+
+    /* should have pages[3] at both 0 and PAGE_SIZE, pages[4] nowhere, ... */
+    assert(check_va2pa(kern_pml4, 0) == page2pa(pages[3]));
+    assert(check_va2pa(kern_pml4, PAGE_SIZE) == page2pa(pages[3]));
+    /* ... and ref counts should reflect this */
+    assert(pages[3]->pp_ref == 2);
+    assert(pages[4]->pp_ref == 0);
+
+    /* pages[4] should be returned by page_alloc */
+    assert((pp = page_alloc(0)) && pp == pages[4]);
+
+    /* unmapping pp1 at 0 should keep pages[3] at PAGE_SIZE */
+    page_remove(kern_pml4, 0x0);
+    assert(check_va2pa(kern_pml4, 0x0) == ~0);
+    assert(check_va2pa(kern_pml4, PAGE_SIZE) == page2pa(pages[3]));
+    assert(pages[3]->pp_ref == 1);
+    assert(pages[4]->pp_ref == 0);
+
+    /* test re-inserting pages[3] at PAGE_SIZE */
+    assert(page_insert(kern_pml4, pages[3], (void*) PAGE_SIZE, 0) == 0);
+    assert(pages[3]->pp_ref);
+    assert(pages[3]->pp_link == NULL);
+
+    /* unmapping pages[3] at PAGE_SIZE should free it */
+    page_remove(kern_pml4, (void*) PAGE_SIZE);
+    assert(check_va2pa(kern_pml4, 0x0) == ~0);
+    assert(check_va2pa(kern_pml4, PAGE_SIZE) == ~0);
+    assert(pages[3]->pp_ref == 0);
+    assert(pages[4]->pp_ref == 0);
+
+    /* so it should be returned by page_alloc */
+    assert((pp = page_alloc(0)) && pp == pages[3]);
+
+    /* should be no free memory */
+    assert(!page_alloc(0));
+
+    /* forcibly take pages[0], pages[1] and pages[2] back */
+    assert(PAGE_ADDR(kern_pml4->entries[0]) == page2pa(pages[2]));
+    kern_pml4->entries[0] = 0;
+
+    for (i = 0; i < 3; ++i) {
+        assert(pages[i]->pp_ref == 1);
+        pages[i]->pp_ref = 0;
+        page_free(pages[i]);
+    }
+
+    /* check pointer arithmetic in page_walk */
+    va = (void*)(PAGE_TABLE_SPAN + PAGE_SIZE);
+    entry2 = page_walk(kern_pml4, va, 1);
+
+    entry = kern_pml4->entries + PML4_INDEX((uintptr_t)va);
+    assert(*entry & PAGE_PRESENT);
+    pdpt = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = pdpt->entries + PDPT_INDEX((uintptr_t)va);
+    assert(*entry & PAGE_PRESENT);
+    page_dir = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = page_dir->entries + PAGE_DIR_INDEX((uintptr_t)va);
+    assert(*entry & PAGE_PRESENT);
+    page_table = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = page_table->entries + PAGE_TABLE_INDEX((uintptr_t)va);
+    assert(entry == entry2);
+
+    kern_pml4->entries[PML4_INDEX((uintptr_t)va)] = 0;
+
+    for (i = 0; i < 3; ++i) {
+        pages[i]->pp_ref = 0;
+        page_free(pages[i]);
+    }
+
+    /* check that new page tables get cleared */
+    memset(page2kva(pages[0]), 0xFF, PAGE_SIZE);
+    page_walk(kern_pml4, 0x0, 1);
+
+    entry = kern_pml4->entries;
+    assert(*entry & PAGE_PRESENT);
+    pdpt = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = pdpt->entries;
+    assert(*entry & PAGE_PRESENT);
+    page_dir = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = page_dir->entries;
+    assert(*entry & PAGE_PRESENT);
+    page_table = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+
+    for (i = 0; i < PAGE_TABLE_ENTRIES; ++i) {
+        assert((page_table->entries[i] & PAGE_PRESENT) == 0);
+    }
+
+    kern_pml4->entries[0] = 0;
+
+    for (i = 0; i < 3; ++i) {
+        pages[i]->pp_ref = 0;
+    }
+
+    /* give free list back */
+    page_free_list = fl;
+
+    /* free the pages we took */
+    for (i = 0; i < 5; ++i)
+        page_free(pages[i]);
+
+    cprintf("check_page() succeeded!\n");
+}
+
+/* Check page_insert, page_remove, &c, with an installed kern_pml4 */
+static void check_page_installed_pml4(void)
+{
+    struct page_info *pp, *pp0, *pp1, *pp2;
+    uintptr_t va;
+    int i;
+
+    /* check that we can read and write installed pages */
+    pp1 = pp2 = 0;
+    assert((pp0 = page_alloc(0)));
+    assert((pp1 = page_alloc(0)));
+    assert((pp2 = page_alloc(0)));
+    page_free(pp0);
+    memset(page2kva(pp1), 1, PAGE_SIZE);
+    memset(page2kva(pp2), 2, PAGE_SIZE);
+    page_insert(kern_pml4, pp1, (void*) PAGE_SIZE, PAGE_WRITE);
+    assert(pp1->pp_ref == 1);
+    assert(*(uint32_t *)PAGE_SIZE == 0x01010101U);
+    page_insert(kern_pml4, pp2, (void*) PAGE_SIZE, PAGE_WRITE);
+    assert(*(uint32_t *)PAGE_SIZE == 0x02020202U);
+    assert(pp2->pp_ref == 1);
+    assert(pp1->pp_ref == 0);
+    *(uint32_t *)PAGE_SIZE = 0x03030303U;
+    assert(*(uint32_t *)page2kva(pp2) == 0x03030303U);
+    page_remove(kern_pml4, (void*) PAGE_SIZE);
+    assert(pp2->pp_ref == 0);
+
+    /* forcibly take pp0 back */
+    assert(PAGE_ADDR(kern_pml4->entries[0]) == page2pa(pp0));
+    kern_pml4->entries[0] = 0;
+    assert(pp0->pp_ref == 1);
+    pp0->pp_ref = 0;
+
+    /* free the pages we took */
+    page_free(pp0);
+
+    cprintf("check_page_installed_pml4() succeeded!\n");
+}
+
+
+static void check_wx(void)
+{
+    struct page_table *pml4, *pdpt, *pgdir, *pt;
+    size_t s, t, u, v;
+
+    pml4 = kern_pml4;
+
+    for (s = 0; s < PAGE_TABLE_ENTRIES; ++s) {
+        if (s == PML4_INDEX(USER_PML4))
+            continue;
+
+        if (!(pml4->entries[s] & PAGE_PRESENT))
+            continue;
+
+        pdpt = (void *)(KERNEL_VMA + PAGE_ADDR(pml4->entries[s]));
+
+        for (t = 0; t < PAGE_TABLE_ENTRIES; ++t) {
+            if (!(pdpt->entries[t] & PAGE_PRESENT))
+                continue;
+
+            pgdir = (void *)(KERNEL_VMA + PAGE_ADDR(pdpt->entries[t]));
+
+            for (u = 0; u < PAGE_TABLE_ENTRIES; ++u) {
+                if (!(pgdir->entries[u] & PAGE_PRESENT))
+                    continue;
+
+                if ((pgdir->entries[u] & PAGE_HUGE)) {
+                    if ((pgdir->entries[u] & (PAGE_NO_EXEC | PAGE_WRITE)) ==
+                        PAGE_WRITE)
+                        panic("page %016p is mapped both write and "
+                            "executable!\n",
+                            ((s >= 256) ? 0xffff800000000000 : 0) |
+                            (s << PML4_SHIFT) | (t << PDPT_SHIFT) |
+                            (u << PAGE_DIR_SHIFT));
+
+                    continue;
+                }
+
+                pt = (void *)(KERNEL_VMA + PAGE_ADDR(pgdir->entries[u]));
+
+                for (v = 0; v < PAGE_TABLE_ENTRIES; ++v) {
+                    if (!(pt->entries[v] & PAGE_PRESENT))
+                        continue;
+
+                    if ((pt->entries[v] & (PAGE_NO_EXEC | PAGE_WRITE)) ==
+                        PAGE_WRITE)
+                        panic("page %016p is mapped both write and "
+                            "executable!\n",
+                            ((s >= 256) ? 0xffff800000000000 : 0) |
+                            (s << PML4_SHIFT) | (t << PDPT_SHIFT) |
+                            (u << PAGE_DIR_SHIFT) | (v << PAGE_TABLE_SHIFT));
+                }
+            }
+        }
+    }
+
+    cprintf("check_wx() succeeded!\n");
+}
+
+/* Check page_walk() for huge page support */
+static void check_page_hugepages(void)
+{
+    struct page_info *php0;
+    assert(php0 = page_alloc(ALLOC_HUGE));
+    assert(page_insert(kern_pml4, php0, (void *)(512*PAGE_SIZE), PAGE_WRITE | PAGE_HUGE) == 0);
+    assert(php0->pp_ref == 1);
+    memset(page2kva(php0), 1, PAGE_SIZE);
+    assert(*(uint32_t *)(512*PAGE_SIZE) == 0x01010101U);
+
+    /* Access the second 4K-page within the huge page */
+    memset(page2kva(php0+1), 2, PAGE_SIZE);
+    assert(*(uint32_t *)(513*PAGE_SIZE) == 0x02020202U);
+
+    /* Writing to the last 4K-page within the huge page works? */
+    *(uint32_t *)(2*512*PAGE_SIZE - 42) = 0x42424242U;
+    assert(*(uint32_t *)(2*512*PAGE_SIZE - 42) == 0x42424242U);
+
+    /* Are the underlying frames consecutive? */
+    memset(page2kva(php0+509), 0x37, PAGE_SIZE);
+    memset(page2kva(php0+510), 0x38, PAGE_SIZE);
+    assert(*(uint32_t *)((512+509)*PAGE_SIZE) == 0x37373737U);
+    assert(*(uint32_t *)((512+510)*PAGE_SIZE) == 0x38383838U);
+
+    /* Check page_walk for the page and the PSE bit */
+    physaddr_t *p_pte1, *p_pte2;
+    p_pte1 = page_walk(kern_pml4, (void*)(512*PAGE_SIZE), 0);
+    assert(NULL != p_pte1);
+    assert(*p_pte1 & PAGE_HUGE);
+    p_pte2 = page_walk(kern_pml4, (void*)(513*PAGE_SIZE), 0);
+    assert(NULL != p_pte2);
+    assert(p_pte1 == p_pte2);
+
+    /* check page_remove() on the huge page */
+    page_remove(kern_pml4, (void*) (512*PAGE_SIZE));
+    assert(php0->pp_ref == 0);
+    assert((php0+510)->pp_ref == 0);
+
+    /* check CREATE_HUGE flag */
+    p_pte1 = page_walk(kern_pml4, (void*)(512*PAGE_SIZE), CREATE_HUGE);
+    assert(NULL != p_pte1);
+    assert(php0 = page_alloc(ALLOC_HUGE));
+    assert(page_insert(kern_pml4, php0, (void *)(2*512*PAGE_SIZE), PAGE_WRITE | PAGE_HUGE) == 0);
+    page_remove(kern_pml4, (void*) (2*512*PAGE_SIZE));
+    assert(php0->pp_ref == 0);
+
+    cprintf("check_page_hugepages() succeeded!\n");
+}
+

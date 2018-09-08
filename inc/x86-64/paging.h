@@ -12,7 +12,12 @@
 #define PAGE_DIRTY (1 << 6)
 #define PAGE_HUGE (1 << 7)
 #define PAGE_GLOBAL (1 << 8)
+
+#ifdef __ASSEMBLER__
 #define PAGE_NO_EXEC (1 << 63)
+#else
+#define PAGE_NO_EXEC (1ULL << 63)
+#endif
 
 #define PAGE_TABLE_SHIFT (12)
 #define PAGE_DIR_SHIFT   (PAGE_TABLE_SHIFT + 9)

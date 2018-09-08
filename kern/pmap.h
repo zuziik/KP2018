@@ -51,7 +51,6 @@ static inline void *_kaddr(const char *file, int line, physaddr_t pa)
     return (void *)(pa + KERNEL_VMA);
 }
 
-
 enum {
     /* For page_alloc, zero the returned physical page. */
     ALLOC_ZERO = 1<<0,
@@ -59,11 +58,23 @@ enum {
     ALLOC_PREMAPPED = 1<<2,
 };
 
+enum {
+    /* For page_walk, tells whether to create normal page or huge page */
+    CREATE_NORMAL = 1<<0,
+    CREATE_HUGE   = 1<<1,
+};
+
 void mem_init(struct boot_info *boot_info);
 
 void page_init(struct boot_info *boot_info);
 struct page_info *page_alloc(int alloc_flags);
 void page_free(struct page_info *pp);
+int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int perm);
+void page_remove(struct page_table *pml4, void *va);
+struct page_info *page_lookup(struct page_table *pml4, void *va, physaddr_t **entry);
+void page_decref(struct page_info *pp);
+
+void tlb_invalidate(struct page_table *pml4, void *va);
 
 static inline physaddr_t page2pa(struct page_info *pp)
 {

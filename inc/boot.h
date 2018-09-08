@@ -8,6 +8,7 @@
 struct boot_info {
     uint32_t mmap_addr;
     uint32_t mmap_len;
+    void *elf_hdr;
 };
 
 enum mmap_type {
