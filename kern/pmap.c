@@ -1,3 +1,36 @@
+/*
+ * ----------------------------------------------------------------------------
+ * LAB 1
+ * Kernel Programming 2018 @VU
+ * by Matthijs Jansen and Zuzana Hromcova
+ * Version from Friday, September 7th
+ * ----------------------------------------------------------------------------
+ * 
+ * Remarks:
+ * 
+ * This version works with normal pages and huge pages.
+ * In this version lab 1 should be completely and correctly implemented.
+ *
+ * There are 3 new helper functions at the top of this file.
+ *  - initial merge: after page_init(), tries to create as many huge pages
+ *    as possible in stead of a lot of normal pages
+ *  - delete from free: when using alloc_page(), delete the page you want
+ *    to alloc from the free list
+ *  - merge after free: if a normal page is freed in free_page(), this function
+ *    will check if the potential huge page it resides in can be created.
+ *
+ * Only 1 free list is used with markers to differentiate normal and huge pages
+ * from each other, see /inc/paging.h. This is done mostly because the test cases
+ * at the bottom of this file can only handle 1 free list and rewriting those test
+ * cases would be much work.
+ *
+ * The free list is also transformed in a doubly linked list (so with next and previous)
+ * since this would make a 1 free list implementation much easier.d
+ *
+ * An is_available flag is also used to check if a page is in the free list or not 
+ * for a speed boost.
+ */
+
 /* See COPYRIGHT for copyright information. */
 
 #include <inc/error.h>
@@ -20,6 +53,188 @@ static struct page_info *page_free_list; /* Free list of physical pages */
 
 static void check_page_free_list(bool only_low_memory);
 static void check_page_alloc(void);
+
+
+// After initializing the pages and page_free_list array, 
+// check the whole memory to see if huge pages can be created
+// by merging many small pages. Only executes once at the start.
+void initial_merge(struct boot_info *boot_info) {
+    struct page_info *cur;
+    struct page_info *page;
+    struct mmap_entry *entry = (struct mmap_entry *)KADDR(boot_info->mmap_addr);
+    uintptr_t start_huge = 0;
+    uintptr_t pa = 0;
+    uintptr_t prev = 0;
+    size_t i;    
+    int m;
+    int start = 0;
+
+    // Loop through all pages
+    for (i = 0; i < boot_info->mmap_len; ++i, ++entry) {
+        prev = 0;
+        start_huge = 0;
+        if (entry->type != MMAP_FREE) {
+            continue;
+        }
+        for (pa = entry->addr; pa < entry->addr + entry->len; pa += PAGE_SIZE) {
+            // Skip if segment is too short
+            if (entry->len < SMALL_PAGES_IN_HUGE) {
+                break;
+            }
+
+            // Find start of huge page
+            if (pa % (SMALL_PAGES_IN_HUGE * PAGE_SIZE) == 0) {
+                start = 1;
+                start_huge = pa;
+            }
+
+            // Only start searching when the beginning of a block has been found
+            // Check if each small page is free
+            page = pa2page(pa);
+            if (start) {
+                // Not next to each other (aligned) or not in free list
+                if (page->is_available != 1 || 
+                    (start_huge != pa && pa != prev + PAGE_SIZE)) {
+                    start = 0;
+                }
+            }
+
+            // Reached end of huge page and everything is free, merge
+            // Mark first entry as huge and delete rest from free
+            if (start && pa == start_huge + (SMALL_PAGES_IN_HUGE - 1) * PAGE_SIZE) {
+                // Delete small pages from free list except the first
+                for (m = start_huge + PAGE_SIZE; m < start_huge + SMALL_PAGES_IN_HUGE *
+                     PAGE_SIZE; m += PAGE_SIZE) {
+                    cur = pa2page(m);
+                    cur->is_available = 0;
+
+                    // Is first entry
+                    if (cur->previous == NULL) {
+                        page_free_list = cur->pp_link;
+                        if (page_free_list != NULL) {
+                            page_free_list->previous = NULL;
+                        }
+                    } else {
+                        // Fix links
+                        (cur->previous)->pp_link = cur->pp_link;
+                        if (cur->pp_link != NULL) {
+                            (cur->pp_link)->previous = cur->previous;
+                        }
+                    }
+                    cur->pp_link = NULL;
+                    cur->previous = NULL;
+                }
+                // First entry was not deleted, is new huge entry
+                pa2page(start_huge)->is_huge = 1;
+            }
+            prev = pa;
+        }
+    }
+}
+
+
+// Search for a normal or huge page in the free list
+// If the right type is found, remove it and return it
+struct page_info *delete_from_free(int ishuge) {
+    struct page_info *cur = page_free_list;
+
+    // Search for free page
+    while (cur) {
+        if (cur->is_huge == ishuge) {
+            break;
+        } 
+        cur = cur->pp_link;
+    }
+
+    // No page found, out of memory or split huge if small
+    if (cur == NULL) {
+        return NULL;
+    } 
+
+    // Use first entry in list
+    if (cur->previous == NULL) {
+        page_free_list = page_free_list->pp_link;
+        if (page_free_list != NULL) {
+            page_free_list->previous = NULL;
+        }
+    } 
+    // Not first entry
+    else {
+        (cur->previous)->pp_link = cur->pp_link;
+        if (cur->pp_link != NULL) {
+            (cur->pp_link)->previous = cur->previous;
+        }
+    }
+
+    cur->is_available = 0;
+    cur->pp_link = NULL;
+    cur->previous = NULL;
+    return cur;
+}
+
+
+// After freeing a small page, try to merge it with free small page around 
+// it (if possible) to create a large page.
+void merge_after_free(struct page_info *target) {
+    struct page_info* huge_start = NULL;
+    struct page_info* cur = NULL;
+    int addr = page2pa(target);
+    int i;
+
+    // Find the beginning of the potential huge page the freed 
+    // small page is in
+    if (addr % (SMALL_PAGES_IN_HUGE * PAGE_SIZE) == 0) {
+        huge_start = target;
+    } else {
+        while (addr % (SMALL_PAGES_IN_HUGE * PAGE_SIZE) != 0) {
+            addr -= PAGE_SIZE;
+        }
+        huge_start = pa2page(addr);
+    }
+
+    // Check if the potential huge page is completely free
+    cur = huge_start;
+    for (i = 0; i < SMALL_PAGES_IN_HUGE; ++i) {
+        // Check if addresses are next to each other
+        if (cur == NULL || (cur != huge_start && 
+            page2pa(cur->previous) + PAGE_SIZE != page2pa(cur)) ||
+            cur->is_available != 1) {
+            huge_start = NULL;
+            break;
+        }
+
+        // Next in pages array
+        cur = &cur[1];
+    }
+
+    // Create free huge page and remove all small pages from free list except the first
+    if (huge_start != NULL) {
+        cur = &huge_start[1];
+        for (i = 1; i < SMALL_PAGES_IN_HUGE; ++i) {
+            // First in free list
+            if (cur->previous == NULL) {
+                page_free_list = page_free_list->pp_link;
+                page_free_list->previous = NULL;
+            } 
+            // Not first entry
+            else {
+                (cur->previous)->pp_link = cur->pp_link;
+                if (cur->pp_link != NULL) {
+                    (cur->pp_link)->previous = cur->previous;
+                }
+            }
+
+            cur->is_available = 0;
+            cur->pp_link = NULL;
+            cur->previous = NULL;
+            cur = &cur[1];
+        }
+
+        // First entry was not deleted, is new huge entry
+        huge_start->is_huge = 1;
+    }
+}
+
 
 /* This simple physical memory allocator is used only while JOS is setting up
  * its virtual memory system.  page_alloc() is the real allocator.
@@ -52,14 +267,12 @@ static void *boot_alloc(uint32_t n)
      *
      * LAB 1: Your code here.
      */
+    result = nextfree;
     nextfree = ROUNDUP(nextfree + n, PAGE_SIZE);
+
+    // TODO: Out of memory
     
-    // TODO: Panic if out of memory: code below does not work
-    // if ((size_t) nextfree >= npages * PAGE_SIZE) {
-    //     panic ("Boot alloc out of memory!");
-    // }
-    
-    return nextfree;
+    return result;
 }
 
 /*
@@ -105,7 +318,10 @@ void mem_init(struct boot_info *boot_info)
     
     for (i = 0; i < npages; i++) {
         pages[i].pp_link = NULL;
+        pages[i].previous = NULL;
         pages[i].pp_ref = 0;
+        pages[i].is_huge = 0;
+        pages[i].is_available = 0;
     }
 
     /*********************************************************************
@@ -162,14 +378,6 @@ void page_init(struct boot_info *boot_info)
     entry = (struct mmap_entry *)KADDR(boot_info->mmap_addr);
     end = PADDR(boot_alloc(0));
 
-    cprintf("MPENTRY_PADDR %08x\n", MPENTRY_PADDR);
-    cprintf("IO_PHYS_MEM   %08x\n", IO_PHYS_MEM);
-    cprintf("EXT_PHYS_MEM  %08x\n", EXT_PHYS_MEM);
-    cprintf("KERNEL_LMA    %08x\n", KERNEL_LMA);
-    cprintf("end           %08x\n", end);
-    cprintf("-------------------START-------------------\n");
-
-    // Our version would be:
     page_free_list = NULL;
     for (i = 0; i < boot_info->mmap_len; ++i, ++entry) {
         if (entry->type != MMAP_FREE) {
@@ -177,28 +385,24 @@ void page_init(struct boot_info *boot_info)
         }
         for (pa = entry->addr; pa < entry->addr + entry->len; pa += PAGE_SIZE) {
             page = pa2page(pa);
-            page->pp_ref = 0;
-
-            
-            // Check which address shouldnt be free
-            // if (pa != 0 && pa != MPENTRY_PADDR && pa < IO_PHYS_MEM) {
-            // if (pa != 0 && pa != MPENTRY_PADDR && !(pa >= IO_PHYS_MEM && pa <= EXT_PHYS_MEM)) { // && pa < EXT_PHYS_MEM
-            //     if (!(pa >= KERNEL_LMA && pa <= end)) { // && pa < end
-            //         page->pp_link = page_free_list;
-            //         page_free_list = page;
-            //     }
-            // } 
 
             // Check which address shouldnt be free
             if (!(pa == 0 || pa == MPENTRY_PADDR || 
-                 (pa >= IO_PHYS_MEM && pa <= EXT_PHYS_MEM) ||
-                 (pa >= KERNEL_LMA && pa < end) ||
-                 pa >= end)) {
+                 (pa >= KERNEL_LMA && pa < end))) {
+                page->is_available = 1;
+
+                // Set next and previous
                 page->pp_link = page_free_list;
+                if (page_free_list != NULL) {
+                    page_free_list->previous = page;
+                }
                 page_free_list = page;
             } 
         }
     }
+
+    // Merge the small pages to create huge pages
+    initial_merge(boot_info);
 }
 
 /*
@@ -221,27 +425,70 @@ void page_init(struct boot_info *boot_info)
 struct page_info *page_alloc(int alloc_flags)
 {
     struct page_info *page;
-
-    // Out of memory
+    struct page_info *tmp;
+    int i;
+    
+    // If out of memory, return NULL
     if (page_free_list == NULL) {
         return NULL;
     }
 
-    // Get the first free page, update page_free_list
-    page = page_free_list;
-    if (page_free_list->pp_link == NULL) {
-        page_free_list = NULL;
-    } else {
-        page_free_list = page_free_list->pp_link;
+    // Try to allocate a huge page
+    if (alloc_flags & ALLOC_HUGE) {
+        page =  delete_from_free(1);
+        if (page == NULL)
+            return NULL;
     }
-    page->pp_link = NULL;
+    // Try to allocate a small page
+    else {
+        page = delete_from_free(0);
 
-    // Fill memory with 0 if flags are set
-    if (alloc_flags & ALLOC_ZERO)
-        memset(page2kva(page), 0, PAGE_SIZE);
+        // If there is no small page available,
+        // we will split a huge page into several small pages
+        if (page == NULL) {
+            // Save first page
+            tmp = page_free_list;
+            page_free_list = page_free_list->pp_link;
+
+            if (page_free_list != NULL) {
+                page_free_list->previous = NULL;
+            }
+
+            tmp->is_huge = 0;
+            tmp->is_available = 0;
+            tmp->pp_link = NULL;
+            tmp->previous = NULL;
+
+            // Add the rest of the pages to the free pages pool.
+            // They are stored in an array so we can do it like this.
+            page = tmp;
+            for (i = 1; i < SMALL_PAGES_IN_HUGE; i++) {
+                // Prepend
+                page[i].pp_link = page_free_list;
+                if (page_free_list != NULL) {
+                    page_free_list->previous = &page[i];
+                } 
+                page_free_list = &page[i];
+
+                page[i].is_huge = 0;
+                page[i].is_available = 1;
+            }
+            page_free_list->previous = NULL;
+
+            // First page of huge page is allocated
+            page = tmp;
+        }
+    }
+
+    // Initialize with zeros
+    if (alloc_flags & ALLOC_ZERO) {
+        if (alloc_flags & ALLOC_HUGE)
+            memset(page2kva(page), 0, PAGE_SIZE * SMALL_PAGES_IN_HUGE);
+        else
+            memset(page2kva(page), 0, PAGE_SIZE);
+    }
+
     return page;
-
-    //TODO add 2MB pages support
 }
 
 /*
@@ -250,21 +497,40 @@ struct page_info *page_alloc(int alloc_flags)
  */
 void page_free(struct page_info *pp)
 {
+    struct page_info* tmp;
+    struct page_info* prev;
+    int i, j;
+    j = 0;
+    
     /* Fill this function in
      * Hint: You may want to panic if pp->pp_ref is nonzero or
      * pp->pp_link is not NULL. */
     if (pp->pp_link != NULL) {
         panic("Failed to free a page with pp_link != NULL");
     }
-    
     if (pp->pp_ref != 0) {
         panic("Failed to free a page with nonzero refcount");        
     }
+    if (pp->is_available == 1) {
+        panic("Attempt to double-free a page failed");
+    }
 
-    pp->pp_link = page_free_list;
-    page_free_list = pp;
+    // Add page to free list
+    if (page_free_list == NULL) {
+        page_free_list = pp;
+        pp->pp_link = NULL;
+    } else {
+        page_free_list->previous = pp;
+        pp->pp_link = page_free_list;
+        page_free_list = pp;
+    }
+    pp->previous = NULL;
+    pp->is_available = 1;
 
-    //TODO 2MB pages support
+    // If small page is added, check if huge page can be created
+    if (!pp->is_huge) {
+        merge_after_free(pp);
+    }
 }
 
 /*
@@ -419,42 +685,42 @@ static void check_page_alloc(void)
     cprintf("[4K] check_page_alloc() succeeded!\n");
 
     // /* test allocation of huge page */
-    // pp0 = pp1 = php0 = 0;
-    // assert((pp0 = page_alloc(0)));
-    // assert((php0 = page_alloc(ALLOC_HUGE)));
-    // assert((pp1 = page_alloc(0)));
-    // assert(pp0);
-    // assert(php0 && php0 != pp0);
-    // assert(pp1 && pp1 != php0 && pp1 != pp0);
-    // assert(0 == (page2pa(php0) % 512*PAGE_SIZE));
-    // if (page2pa(pp1) > page2pa(php0)) {
-    //     assert(page2pa(pp1) - page2pa(php0) >= 512*PAGE_SIZE);
-    // }
+    pp0 = pp1 = php0 = 0;
+    assert((pp0 = page_alloc(0)));
+    assert((php0 = page_alloc(ALLOC_HUGE)));
+    assert((pp1 = page_alloc(0)));
+    assert(pp0);
+    assert(php0 && php0 != pp0);
+    assert(pp1 && pp1 != php0 && pp1 != pp0);
+    assert(0 == (page2pa(php0) % 512*PAGE_SIZE));
+    if (page2pa(pp1) > page2pa(php0)) {
+        assert(page2pa(pp1) - page2pa(php0) >= 512*PAGE_SIZE);
+    }
 
-    // /* free and reallocate 2 huge pages */
-    // page_free(php0);
-    // page_free(pp0);
-    // page_free(pp1);
-    // php0 = php1 = pp0 = pp1 = 0;
-    // assert((php0 = page_alloc(ALLOC_HUGE)));
-    // assert((php1 = page_alloc(ALLOC_HUGE)));
+    /* free and reallocate 2 huge pages */
+    page_free(php0);
+    page_free(pp0);
+    page_free(pp1);
+    php0 = php1 = pp0 = pp1 = 0;
+    assert((php0 = page_alloc(ALLOC_HUGE)));
+    assert((php1 = page_alloc(ALLOC_HUGE)));
 
-    // /* Is the inter-huge-page difference right? */
-    // if (page2pa(php1) > page2pa(php0)) {
-    //     assert(page2pa(php1) - page2pa(php0) >= 512*PAGE_SIZE);
-    // } else {
-    //     assert(page2pa(php0) - page2pa(php1) >= 512*PAGE_SIZE);
-    // }
+    /* Is the inter-huge-page difference right? */
+    if (page2pa(php1) > page2pa(php0)) {
+        assert(page2pa(php1) - page2pa(php0) >= 512*PAGE_SIZE);
+    } else {
+        assert(page2pa(php0) - page2pa(php1) >= 512*PAGE_SIZE);
+    }
 
-    // /* free the huge pages we took */
-    // page_free(php0);
-    // page_free(php1);
+    /* free the huge pages we took */
+    page_free(php0);
+    page_free(php1);
 
-    // /* number of free pages should be the same */
-    // nfree = total_free;
-    // for (pp = page_free_list; pp; pp = pp->pp_link)
-    //     --nfree;
-    // assert(nfree == 0);
+    /* number of free pages should be the same */
+    nfree = total_free;
+    for (pp = page_free_list; pp; pp = pp->pp_link)
+        --nfree;
+    assert(nfree == 0);
 
-    // cprintf("[2M] check_page_alloc() succeeded!\n");
+    cprintf("[2M] check_page_alloc() succeeded!\n");
 }

@@ -14,15 +14,19 @@
  * with page2pa() in kern/pmap.h.
  */
 struct page_info {
-    /* Next page on the free list. */
+    /* Next and previous page on the free list. */
     struct page_info *pp_link;
+    struct page_info *previous;
 
     /* pp_ref is the count of pointers (usually in page table entries)
      * to this page, for pages allocated using page_alloc.
      * Pages allocated at boot time using pmap.c's
      * boot_alloc do not have valid reference count fields. */
-
+    uint16_t is_huge;
     uint16_t pp_ref;
+
+    /* Is in the free list or not */
+    uint16_t is_available;
 };
 #endif /* !__ASSEMBLER__ */
 

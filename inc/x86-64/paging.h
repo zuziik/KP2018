@@ -1,6 +1,7 @@
 #pragma once
 
 #define PAGE_SIZE 4096
+#define SMALL_PAGES_IN_HUGE 512
 
 #define PAGE_PRESENT (1 << 0)
 #define PAGE_WRITE (1 << 1)
