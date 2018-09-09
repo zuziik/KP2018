@@ -88,6 +88,8 @@ void mem_init(struct boot_info *boot_info)
     uint32_t cr0;
     size_t i, n;
 
+    cprintf("[MEM_INIT] START\n");
+
     /* Find the amount of pages to allocate structs for. */
     entry = (struct mmap_entry *)((physaddr_t)boot_info->mmap_addr);
 
@@ -140,13 +142,17 @@ void mem_init(struct boot_info *boot_info)
      */
 
     cprintf("[MEM_INIT] END\n");
+    cprintf("[PAGE_INIT] START\n");
     page_init(boot_info);
     cprintf("[PAGE_INIT] END\n");
+    cprintf("[CHECK_PAGE_FREE_LIST] START\n");
     check_page_free_list(1);
     cprintf("[CHECK_PAGE_FREE_LIST] END\n");
+    cprintf("[CHECK_PAGE_ALLOC] START\n");
     check_page_alloc();
     cprintf("[CHECK_PAGE_ALLOC] END\n");
     cprintf("------------- LAB 2 -------------\n");
+    cprintf("[CHECK_PAGE] START\n");
     check_page();
     cprintf("[CHECK_PAGE] END\n");
 
@@ -473,8 +479,54 @@ static void boot_map_kernel(struct elf *elf_hdr)
  */
 physaddr_t *page_walk(struct page_table *pml4, const void *va, int create)
 {
-    /* Fill this function in. */
-    return NULL;
+    struct page_info *page;
+    physaddr_t *entry;
+    cprintf("[PAGE_WALK] START\n");
+
+    // Pml4 entry
+    entry = pml4->entries + PML4_INDEX((uintptr_t) va);
+    if (!(*entry & PAGE_PRESENT))
+        return NULL;
+
+    // PDP entry
+    pml4 = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = pml4->entries + PDPT_INDEX((uintptr_t) va);
+    if (!(*entry & PAGE_PRESENT))
+        return NULL;
+
+    // Page dir entry
+    pml4 = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = pml4->entries + PAGE_DIR_INDEX((uintptr_t) va);
+    if (!(*entry & PAGE_PRESENT))
+        return NULL;
+
+    // Page table entry
+    pml4 = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+    entry = pml4->entries + PAGE_TABLE_INDEX((uintptr_t) va);
+    page = pa2page(*entry);
+    
+    // Page table entry does not exist yet
+    if (!(*entry & PAGE_PRESENT)) {
+        // Can not create new page
+        if (!create) {
+            page = NULL;
+        }
+        // Create new page entry
+        else {
+            page = page_alloc(ALLOC_ZERO);
+            if (page != NULL) {
+                page->pp_ref++;
+            }
+        }
+    }
+
+    // Return address of page table entry
+    cprintf("[PAGE_WALK] END\n");
+    if (page == NULL) {
+        return NULL;
+    } else {
+        return (physaddr_t *) page2pa(page);
+    }
 }
 
 /*
@@ -522,8 +574,17 @@ int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int per
 struct page_info *page_lookup(struct page_table *pml4, void *va,
     physaddr_t **entry_store)
 {
-    /* Fill this function in. */
-    return NULL;
+    physaddr_t *addr;
+
+    // Get address of page table entry
+    addr = page_walk(pml4, va, 0);
+
+    if (addr == NULL) {
+        return NULL;
+    } else {
+        // Get page address and page itself
+        return pa2page(PAGE_ADDR(*addr));
+    }
 }
 
 /*
@@ -543,7 +604,22 @@ struct page_info *page_lookup(struct page_table *pml4, void *va,
  */
 void page_remove(struct page_table *pml4, void *va)
 {
-    /* Fill this function in. */
+    struct page_info *page;
+
+    // Get the page table of va
+    page = page_lookup(pml4, va, NULL);
+    if (page == NULL) {
+        return;
+    }
+
+    // Decrement link count of physical page, gets freed if it reaches 0
+    page_decref(page);
+
+    // Set entry in pg table to 0
+    // ............
+
+    // Invalidate tlb
+    tlb_invalidate(pml4, va);
 }
 
 /*
