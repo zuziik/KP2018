@@ -18,6 +18,7 @@ void kmain(struct boot_info *boot_info)
     /* Initialize the console.
      * Can't call cprintf until after we do this! */
     cons_init();
+    cprintf("\n");
 
     /* Lab 1 memory management initialization functions */
     mem_init(boot_info);
