@@ -65,7 +65,6 @@ enum {
 };
 
 void mem_init(struct boot_info *boot_info);
-physaddr_t *page_walk(struct page_table *pml4, const void *va, int create);
 
 void page_init(struct boot_info *boot_info);
 struct page_info *page_alloc(int alloc_flags);
