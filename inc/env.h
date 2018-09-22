@@ -41,64 +41,22 @@ enum {
     ENV_NOT_RUNNABLE
 };
 
-/* The interrupt method used to switch to the kernel. */
-enum {
-    ENV_INT = 0,
-    ENV_SYSCALL,
-};
-
 /* Special environment types */
 enum env_type {
     ENV_TYPE_USER = 0,
 };
 
-/* Max VMAs supported per environment. */
-#define NVMA 128
-
-/*
- * Very simple VMA structure. We support two types of VMA's: anonymous (e.g.,
- * heap/stack) that return zeroed pages. The other is sort of equivalant of the
- * memory-mapped files on for instance Linux, where a file/binary is loaded on
- * demand. As we don't have files or a file system, this can only happen in vOS
- * for the program binary.
- */
-struct vma {
-	struct vma *link;
-    int type;
-    void *va;
-    size_t len;
-    char *name;
-    int perm;
-    void *src_va; /* Location in kernel addr space of binary region. */
-    size_t src_len;
-};
-
-enum {
-    VMA_UNUSED,
-    VMA_ANON,
-    VMA_BINARY,
-};
-
-#define VMA_PERM_EXEC  1 /* Not used on IA-32. */
-#define VMA_PERM_WRITE 2
-#define VMA_PERM_READ  4 /* Always set. */
-
 struct env {
     struct int_frame env_frame; /* Saved registers */
-    struct env *env_wait;
-    uint64_t env_tslice;
     struct env *env_link;       /* Next free env */
     envid_t env_id;             /* Unique environment identifier */
     envid_t env_parent_id;      /* env_id of this env's parent */
     enum env_type env_type;     /* Indicates special system environments */
     unsigned env_status;        /* Status of the environment */
-    unsigned env_int;           /* Interrupt method. */
     uint32_t env_runs;          /* Number of times environment has run */
-    int env_cpunum;             /* The CPU that the env is running on */
 
     /* Address space */
     struct page_table *env_pml4;
-    struct vma *env_vmas;       /* Virtual memory areas of this env. */
 };
 
 #endif /* !JOS_INC_ENV_H */

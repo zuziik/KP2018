@@ -65,6 +65,7 @@ enum {
 };
 
 void mem_init(struct boot_info *boot_info);
+void user_mem_assert(struct env *env, const void *va, size_t len, int perm);
 
 void page_init(struct boot_info *boot_info);
 struct page_info *page_alloc(int alloc_flags);

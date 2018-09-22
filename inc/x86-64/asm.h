@@ -54,17 +54,17 @@ union star_reg {
 static inline uint64_t read_msr(unsigned int reg)
 {
     uint32_t lo, hi;
-	asm volatile(
+    asm volatile(
         "rdmsr\n" :
         "=a" (lo),
         "=d" (hi) :
         "c" (reg));
-	return (uint64_t)hi << 32 | (uint64_t)lo;
+    return (uint64_t)hi << 32 | (uint64_t)lo;
 }
 
 static inline void write_msr(unsigned reg, uint64_t val)
 {
-	asm volatile(
+    asm volatile(
         "wrmsr" ::
         "c" (reg),
         "a" ((uint32_t)(val & 0xFFFFFFFF)),
@@ -234,6 +234,18 @@ static inline void cpuid(unsigned long fn, uint32_t *eaxp, uint32_t *ebxp,
 
     if (edxp)
         *edxp = edx;
+}
+
+static inline uint64_t read_rflags(void)
+{
+    uint64_t rflags;
+
+    asm volatile(
+        "pushfq\n"
+        "popq %0"
+        : "=q" (rflags));
+
+    return rflags;
 }
 
 #endif /* !defined(__ASSEMBLER__) */

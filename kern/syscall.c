@@ -1,0 +1,121 @@
+/* See COPYRIGHT for copyright information. */
+
+#include <inc/error.h>
+#include <inc/string.h>
+#include <inc/assert.h>
+
+#include <inc/x86-64/asm.h>
+#include <inc/x86-64/gdt.h>
+
+#include <kern/cpu.h>
+#include <kern/env.h>
+#include <kern/pmap.h>
+#include <kern/syscall.h>
+#include <kern/console.h>
+
+// #include <kern/pmap.h>
+
+extern void syscall64(void);
+
+void syscall_init(void)
+{
+    syscall_init_percpu();
+}
+
+void syscall_init_percpu(void)
+{
+    /* LAB 3: your code here. */
+}
+
+/*
+ * Print a string to the system console.
+ * The string is exactly 'len' characters long.
+ * Destroys the environment on memory errors.
+ */
+static void sys_cputs(const char *s, size_t len)
+{
+    /* Check that the user has permission to read memory [s, s+len).
+     * Destroy the environment if not. */
+    
+    /* LAB 3: your code here. */ 
+    user_mem_assert(curenv, (void *)s, len, 0);
+
+    // Only executes this code if everything is correct
+    /* Print the string supplied by the user. */
+    cprintf("%.*s", len, s);
+}
+
+/*
+ * Read a character from the system console without blocking.
+ * Returns the character, or 0 if there is no input waiting.
+ */
+static int sys_cgetc(void)
+{
+    return cons_getc();
+}
+
+/* Returns the current environment's envid. */
+static envid_t sys_getenvid(void)
+{
+    return curenv->env_id;
+}
+
+/*
+ * Destroy a given environment (possibly the currently running environment).
+ *
+ * Returns 0 on success, < 0 on error.  Errors are:
+ *  -E_BAD_ENV if environment envid doesn't currently exist,
+ *      or the caller doesn't have permission to change envid.
+ */
+static int sys_env_destroy(envid_t envid)
+{
+    int r;
+    struct env *e;
+
+    if ((r = envid2env(envid, &e, 1)) < 0)
+        return r;
+
+    if (e == curenv)
+        cprintf("[%08x] exiting gracefully\n", curenv->env_id);
+    else
+        cprintf("[%08x] destroying %08x\n", curenv->env_id, e->env_id);
+
+    env_destroy(e);
+
+    return 0;
+}
+
+/* Dispatches to the correct kernel function, passing the arguments. */
+int64_t syscall(uint64_t syscallno, uint64_t a1, uint64_t a2, uint64_t a3,
+        uint64_t a4, uint64_t a5)
+{
+    /*
+     * Call the function corresponding to the 'syscallno' parameter.
+     * Return any appropriate return value.
+     * LAB 3: Your code here.
+     */
+
+    switch (syscallno) {
+        case SYS_cputs: sys_cputs((const char *)a1, (size_t) a2); return 0;
+        case SYS_cgetc: return sys_cgetc();
+        case SYS_getenvid: return sys_getenvid();
+        case SYS_env_destroy: return sys_env_destroy((envid_t) a1);
+        default: return -E_NO_SYS;
+    }
+}
+
+void syscall_handler(uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t rcx,
+    uint64_t r8, uint64_t r9)
+{
+    struct int_frame *frame;
+
+    /* Syscall from user mode. */
+    assert(curenv);
+    frame = &curenv->env_frame;
+
+    /* Issue the syscall. */
+    frame->rax = syscall(rdi, rsi, rdx, rcx, r8, r9);
+
+    /* Return to the current environemnt, which should be running. */
+    env_run(curenv);
+}

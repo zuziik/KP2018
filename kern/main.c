@@ -1,6 +1,10 @@
 #include <kern/console.h>
+#include <kern/env.h>
+#include <kern/idt.h>
+#include <kern/gdt.h>
 #include <kern/monitor.h>
 #include <kern/pmap.h>
+#include <kern/syscall.h>
 
 #include <inc/boot.h>
 #include <inc/stdio.h>
@@ -23,9 +27,22 @@ void kmain(struct boot_info *boot_info)
     /* Lab 1 memory management initialization functions */
     mem_init(boot_info);
 
-    /* Drop into the kernel monitor. */
-    while (1)
-        monitor(NULL);
+    /* Lab 3 user environment initialization functions */
+    gdt_init();
+    idt_init();
+    syscall_init();
+    env_init();
+
+#if defined(TEST)
+    /* Don't touch -- used by grading script! */
+    ENV_CREATE(TEST, ENV_TYPE_USER);
+#else
+    /* Touch all you want. */
+    ENV_CREATE(user_divzero, ENV_TYPE_USER);
+#endif
+
+    /* We only have one user environment for now, so just run it. */
+    env_run(&envs[0]);
 }
 
 /*

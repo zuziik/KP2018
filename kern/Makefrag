@@ -13,12 +13,18 @@ OBJDIRS += kern
 # from the lib directory, to avoid gratuitous code duplication.
 KERN_SRCFILES := \
 	kern/boot.S \
+	kern/stubs.S \
 	kern/console.c \
+	kern/cpu.c \
+	kern/env.c \
+	kern/gdt.c \
+	kern/idt.c \
 	kern/main.c \
 	kern/monitor.c \
 	kern/picirq.c \
 	kern/pmap.c \
 	kern/printf.c \
+	kern/syscall.c \
 	lib/printfmt.c \
 	lib/readline.c \
 	lib/string.c
@@ -27,7 +33,20 @@ KERN_SRCFILES := \
 KERN_SRCFILES := $(wildcard $(KERN_SRCFILES))
 
 # Binary program images to embed within the kernel.
-KERN_BINFILES :=
+KERN_BINFILES := \
+	user/hello \
+	user/buggyhello \
+	user/buggyhello2 \
+	user/evilhello \
+	user/testbss \
+	user/divzero \
+	user/breakpoint \
+	user/softint \
+	user/badsegment \
+	user/faultread \
+	user/faultreadkernel \
+	user/faultwrite \
+	user/faultwritekernel
 
 KERN_OBJFILES := $(patsubst %.c, $(OBJDIR)/%.o, $(KERN_SRCFILES))
 KERN_OBJFILES := $(patsubst %.S, $(OBJDIR)/%.o, $(KERN_OBJFILES))

@@ -39,6 +39,7 @@
 
 #include <inc/x86-64/asm.h>
 
+#include <kern/env.h>
 #include <kern/pmap.h>
 #include <kern/lab1.c>
 
@@ -124,6 +125,7 @@ void mem_init(struct boot_info *boot_info)
     uintptr_t highest_addr = 0;
     uint32_t cr0;
     size_t i, n;
+    cprintf("[MEM_INIT] START\n");
 
     /* Find the amount of pages to allocate structs for. */
     entry = (struct mmap_entry *)((physaddr_t)boot_info->mmap_addr);
@@ -169,6 +171,13 @@ void mem_init(struct boot_info *boot_info)
         pages[i].is_available = 0;
     }
 
+     /*********************************************************************
+     * Make 'envs' point to an array of size 'NENV' of 'struct env'.
+     * LAB 3: your code here.
+     */
+
+    envs = boot_alloc(sizeof(struct env)*NENV);
+
     /*********************************************************************
      * Now that we've allocated the initial kernel data structures, we set
      * up the list of free physical pages. Once we've done so, all further
@@ -196,6 +205,22 @@ void mem_init(struct boot_info *boot_info)
     boot_map_region(kern_pml4, USER_PAGES, 
         ROUNDUP(npages * sizeof(struct page_info), PAGE_SIZE),
         PADDR(pages), PAGE_WRITE | PAGE_NO_EXEC);
+
+    /*********************************************************************
+     * Map the 'envs' array read-only by the user at linear address UENVS
+     * (ie. perm = PTE_U | PTE_P). User | Present
+     * Permissions:
+     *    - the new image at UENVS  -- kernel R, user R
+     *    - envs itself -- kernel RW, user NONE
+     * LAB 3: your code here.
+     */
+    boot_map_region(kern_pml4, USER_ENVS, 
+        ROUNDUP(NENV * sizeof(struct env), PAGE_SIZE),
+        PADDR(envs), PAGE_WRITE | PAGE_NO_EXEC | PAGE_USER);
+
+    physaddr_t *addr;
+    addr = page_walk(kern_pml4, (void *)USER_ENVS, 0);
+    cprintf("entry write? %d\n", *(addr) & PAGE_WRITE);
 
     /*********************************************************************
      * Use the physical memory that 'bootstack' refers to as the kernel
@@ -234,7 +259,9 @@ void mem_init(struct boot_info *boot_info)
     boot_map_kernel((struct elf *)(KERNEL_VMA + (uintptr_t)boot_info->elf_hdr));
 
     /* Check that the initial page directory has been set up correctly. */
+    cprintf("[CHECK_KERN_PML4] START - W3 ENV CHECK\n");
     check_kern_pml4();
+    cprintf("[CHECK_KERN_PML4] END   - W3 ENV CHECK\n");
 
     /* Enable the NX-bit. */
     write_msr(MSR_EFER, MSR_EFER_NXE);
@@ -260,7 +287,7 @@ void mem_init(struct boot_info *boot_info)
     check_page_hugepages();
 
     boot_map_region(kern_pml4, KERNEL_VMA, 0x100000000, 0, PAGE_WRITE);
-    cprintf("-------------- END --------------\n");
+    cprintf("[MEM_INIT] END\n");
 }
 
 /***************************************************************
@@ -286,19 +313,21 @@ void page_init(struct boot_info *boot_info)
         KERNEL_VMA + (uintptr_t)boot_info->elf_hdr);
 
     /*
-     * The example code here marks all physical pages as free.
-     * However this is not truly the case.  What memory is free?
-     *  1) Mark physical page 0 as in use.
-     *     This way we preserve the real-mode IDT and BIOS structures in case we
-     *     ever need them.  (Currently we don't, but...)
-     *  2) The rest of base memory, [PAGE_SIZE, npages_basemem * PAGE_SIZE) is free.
-     *  3) Then comes the IO hole [IO_PHYS_MEM, EXT_PHYS_MEM), which must never be
-     *     allocated.
-     *  4) Then extended memory [EXT_PHYS_MEM, ...).
-     *     Some of it is in use, some is free. Where is the kernel in physical
-     *     memory?  Which pages are already in use for page tables and other
-     *     data structures?
+     * The example code here marks all physical pages as free. However this is
+     * not truly the case. What memory is free?
      *
+     * The boot loader requests the memory map from the BIOS. This memory map
+     * consists of multiple entries of which each spans a region of physical
+     * memory and describes whether is free or not.
+     *
+     * Furthermore, we have to mark the following regions as used:
+     *  1) Physical page 0 to preserve the real-mode IVT and BIOS structures in
+     *     in case we need them.
+     *  2) The memory used by the kernel. Where is the kernel located in
+     *     physical memory? How much is in use by the point we get here?
+     *  3) The boot loader also loaded in the ELF header structures of the
+     *     kernel. We have to preserve these headers until we have set up the
+     *     right permissions in the page tables.
      * Change the code to reflect this.
      * NB: DO NOT actually touch the physical memory corresponding to free
      *     pages! */
@@ -788,6 +817,87 @@ void tlb_invalidate(struct page_table *pml4, void *va)
     flush_page(va);
 }
 
+static uintptr_t user_mem_check_addr;
+
+/*
+ * Check that an environment is allowed to access the range of memory
+ * [va, va+len) with permissions 'perm | PTE_P'.
+ * Normally 'perm' will contain PTE_U at least, but this is not required.
+ * 'va' and 'len' need not be page-aligned; you must test every page that
+ * contains any of that range.  You will test either 'len/PGSIZE',
+ * 'len/PGSIZE + 1', or 'len/PGSIZE + 2' pages.
+ *
+ * A user program can access a virtual address if (1) the address is below
+ * ULIM, and (2) the page table gives it permission.  These are exactly
+ * the tests you should implement here.
+ *
+ * If there is an error, set the 'user_mem_check_addr' variable to the first
+ * erroneous virtual address.
+ *
+ * Returns 0 if the user program can access this range of addresses,
+ * and -E_FAULT otherwise.
+ */
+int user_mem_check(struct env *env, const void *va, size_t len, int perm)
+{
+    cprintf("[USER MEM CHECK] start\n");
+
+    /* LAB 3: your code here. */
+    physaddr_t *pt_entry;
+    struct page_info *page;
+    uintptr_t vi;
+    uintptr_t va_p = (uintptr_t) va;
+    uintptr_t va_start = ROUNDDOWN(va_p, PAGE_SIZE);
+    uintptr_t va_end = ROUNDUP(va_p + len, PAGE_SIZE);
+
+    for (vi = va_start; vi < va_end; vi += PAGE_SIZE) {
+        pt_entry = NULL;
+        page = NULL;
+
+        // Get the page and its entry
+        page = page_lookup(env->env_pml4, (void *)vi, &pt_entry);
+
+        // Check if the page and entry is correct and user space
+        if (page == NULL) {
+            user_mem_check_addr = (vi >= va_p) ? vi : va_p;
+            return -E_FAULT;
+        }
+
+        if (*pt_entry == 0) {
+            user_mem_check_addr = (vi >= va_p) ? vi : va_p;
+            return -E_FAULT;
+        }
+          
+        if (*(unsigned long long int *)vi >= KERNEL_VMA) {
+            user_mem_check_addr = (vi >= va_p) ? vi : va_p;
+            return -E_FAULT;
+        } 
+
+        // Check permissions
+        if (!(*pt_entry & PAGE_PRESENT && *pt_entry & perm)) {
+            user_mem_check_addr = (vi >= va_p) ? vi : va_p;
+            return -E_FAULT;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * Checks that environment 'env' is allowed to access the range
+ * of memory [va, va+len) with permissions 'perm | PTE_U | PTE_P'.
+ * If it can, then the function simply returns.
+ * If it cannot, 'env' is destroyed and, if env is the current
+ * environment, this function will not return.
+ */
+void user_mem_assert(struct env *env, const void *va, size_t len, int perm)
+{
+    if (user_mem_check(env, va, len, perm | PAGE_USER) < 0) {
+        cprintf("[%08x] user_mem_check assertion failure for "
+            "va %08x\n", env->env_id, user_mem_check_addr);
+        env_destroy(env);   /* may not return */
+    }
+}
+
 /***************************************************************
  * Checking functions.
  ***************************************************************/
@@ -811,13 +921,20 @@ static void check_page_free_list(bool only_low_memory)
         struct page_info *pp1, *pp2;
         struct page_info **tp[2] = { &pp1, &pp2 };
         for (pp = page_free_list; pp; pp = pp->pp_link) {
-            int pagetype = page2pa(pp) >= limit;
+            int pagetype = page2pa(pp) >= limit;            // 1 if highmem, 0 if lowmem
             *tp[pagetype] = pp;
             tp[pagetype] = &pp->pp_link;
         }
         *tp[1] = 0;
         *tp[0] = pp2;
         page_free_list = pp1;
+
+        // fix previous pointer
+        struct page_info *prev = NULL;
+        for (pp = page_free_list; pp; pp = pp->pp_link) {
+            pp->previous = prev;
+            prev = pp;
+        }
     }
 
     /* if there's a page that shouldn't be on the free list,
@@ -991,6 +1108,11 @@ static void check_kern_pml4(void)
         assert(check_va2pa(pml4, USER_PAGES + i) == PADDR(pages) + i);
     }
 
+    /* check envs array (new test for lab 3) */
+    n = ROUNDUP(NENV*sizeof(struct env), PAGE_SIZE);
+    for (i = 0; i < n; i += PAGE_SIZE)
+        assert(check_va2pa(pml4, USER_ENVS + i) == PADDR(envs) + i);
+
     /* check phys mem */
     for (i = 0; i < npages * PAGE_SIZE; i += PAGE_SIZE)
         assert(check_va2pa(pml4, KERNEL_VMA + i) == i);
@@ -1007,6 +1129,7 @@ static void check_kern_pml4(void)
         case PML4_INDEX(USER_PML4):
         case PML4_INDEX(KSTACK_TOP-1):
         case PML4_INDEX(USER_PAGES):
+        case PML4_INDEX(USER_ENVS):
             assert(pml4->entries[i] & PAGE_PRESENT);
             break;
         case PML4_INDEX(KERNEL_VMA):
