@@ -1,5 +1,6 @@
 #include <kern/env.h>
 #include <inc/env.h>
+#include <kern/pmap.h>
 
 struct vma *vma_lookup(struct env *e, void *va);
 int vma_insert(struct vma *new_vma, struct env *env);

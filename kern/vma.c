@@ -124,7 +124,7 @@ void vma_map_populate(uintptr_t va, size_t size, int perm, struct env *env) {
     // Alloc physical page for each virt mem page and map it
     while (virt_addr < va + size) {
         page = page_alloc(alloc_flag);
-        if (page_insert(env->pml4, page, (void *) virt_addr, perm) != 0) {
+        if (page_insert(env->env_pml4, page, (void *) virt_addr, perm) != 0) {
             panic("Could not map whole VMA in page tables with flag MAP_POPULATE\n");
         }
         virt_addr += page_size;

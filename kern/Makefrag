@@ -27,7 +27,8 @@ KERN_SRCFILES := \
 	kern/syscall.c \
 	lib/printfmt.c \
 	lib/readline.c \
-	lib/string.c
+	lib/string.c \
+	kern/vma.c
 
 # Only build files if they exist.
 KERN_SRCFILES := $(wildcard $(KERN_SRCFILES))

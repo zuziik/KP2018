@@ -165,7 +165,6 @@ static int sys_vma_destroy(void *va, size_t size)
                 (vma->next)->prev = vma->prev;
             }
         }
-
         curenv->vma_num--;
     } 
     // Destroy part of vma
@@ -198,6 +197,7 @@ static int sys_vma_destroy(void *va, size_t size)
 
             new_vma->prev = vma;
             vma->next = new_vma;
+            curenv->vma_num++;
         }
     }
 

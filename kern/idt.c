@@ -10,6 +10,9 @@
 #include <kern/monitor.h>
 #include <kern/syscall.h>
 
+#include <kern/pmap.h>
+#include <kern/vma.h>
+
 extern void isr0(void);
 extern void isr1(void);
 extern void isr2(void);
@@ -49,7 +52,7 @@ static const char *int_names[256] = {
     [INT_ALIGNMENT] = "Alignment Check (#AC)",
     [INT_MCE] = "Machine Check (#MC)",
     [INT_SIMD] = "SIMD Floating-Point (#XF)",
-    [INT_SECURITY] = "Security (#SX)",
+    [INT_SYSCALL] = "System Call",
 };
 
 static struct idt_entry entries[256];
@@ -165,7 +168,7 @@ void int_dispatch(struct int_frame *frame)
     /* Handle processor exceptions. */
     /* LAB 3: your code here. */
 
-    cprintf("Interrupt: %s\n", get_int_name(frame->int_no));
+    cprintf("Interrupt: %s, %d\n", get_int_name(frame->int_no), frame->int_no);
 
     if (frame->int_no == INT_PAGE_FAULT) {
         page_fault_handler(frame);
@@ -231,34 +234,59 @@ void int_handler(struct int_frame *frame)
 void page_fault_handler(struct int_frame *frame)
 {
     cprintf("[PAGE FAULT HANDLER] start\n");
+    int is_user = (frame->err_code & 4) == 4;           // User or kernel space
+    int is_protection = (frame->err_code & 1) == 1;     // Protection or non-present page
     void *fault_va;
+    struct vma *vma;
+    struct page_info *page;
+    int alloc_flag = ALLOC_ZERO;
 
     /* Read the CR2 register to find the faulting address. */
     fault_va = read_cr2();
 
     /* Handle kernel-mode page faults. */
     /* LAB 3: your code here. */
-
     /* MATTHIJS
-     * kernel mode, can also use error code, looks better
      * always error except when trying to access user space page,
      * then do vma search and insert etc (when does this happen?)
      */
-    if (frame->rip >= KERNEL_VMA) {
-        panic("Page fault on kernel address");
+    // Kernel mode error
+    if (!is_user) {
+        panic("Page fault in kernel mode\n");
     }
 
     /* We have already handled kernel-mode exceptions, so if we get here, the
      * page fault has happened in user mode.
      */
-    /* MATTHIJS
-     * check if page fault is caused by invalid access or not loaded page
-     * using the error code.
-     * If invalid access, just error.
-     * If page not loaded, use vma and page_insert
-     */
+    else {
+        // User mode tries to read page is cant access
+        if (is_protection) {
+            panic("Page fault in user mode, protection violation\n");
+        }
+        // Page is not loaded, search in vma and map it in page tables
+        else {
+            // Get vma associated with faulting virt addr
+            vma = vma_lookup(curenv, fault_va);
+            if (vma == NULL) {
+                panic("Page fault in user mode, try to access non existing page\n");
+            }
 
-    // MATTHIJS: do not always destory the env!
+            // Want to map a huge page or not
+            if (vma->perm & PAGE_HUGE) {
+                alloc_flag |= ALLOC_HUGE;
+            }
+
+            // Map page
+            page = page_alloc(alloc_flag);
+            if (page_insert(curenv->env_pml4, page, (void *) fault_va, vma->perm) != 0) {
+                panic("Could not map whole VMA in page tables with flag MAP_POPULATE\n");
+            } else {
+                // Inserted without problem, dont destroy env
+                return;
+            }
+        }
+    }
+
     /* Destroy the environment that caused the fault. */
     cprintf("[%08x] user fault va %p ip %p\n",
         curenv->env_id, fault_va, frame->rip);
