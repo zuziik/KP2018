@@ -388,6 +388,14 @@ static void load_icode(struct env *e, uint8_t *binary)
 
     page_insert(e->env_pml4, p, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_WRITE | PAGE_USER);
 
+    /* vmatest binary uses the following */
+    /* 1. Map one RO page of VMA for UTEMP at virtual address UTEMP.
+     * 2. Map one RW page of VMA for UTEMP+PAGE_SIZE at virtual address UTEMP. */
+
+    /* LAB 4: Your code here. */
+
+
+
     cprintf("[LOAD ICODE] end\n");
 }
 
