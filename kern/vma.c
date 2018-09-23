@@ -108,6 +108,29 @@ int vma_get_vmem(size_t size, struct vma *vma) {
 
 // MATTHIJS
 // Map whole vma directly into page tables
-void vma_map_populate(uintptr_t va, size_t size, int perm) {
+void vma_map_populate(uintptr_t va, size_t size, int perm, struct env *env) {
+    uintptr_t virt_addr = va;
+    size_t page_size = PAGE_SIZE;
+    int alloc_flag = ALLOC_ZERO;
+    struct page_info *page;
+
+    // Check if huge pages are used
+    // MATTHIJS: what if size % huge_page_size != 0?
+    if (perm & PAGE_HUGE) {
+        page_size *= 512;
+        alloc_flag |= ALLOC_HUGE;
+    }
+
+    // Alloc physical page for each virt mem page and map it
+    while (virt_addr < va + size) {
+        page = page_alloc(alloc_flag);
+        if (page_insert(env->pml4, page, (void *) virt_addr, perm) != 0) {
+            panic("Could not map whole VMA in page tables with flag MAP_POPULATE\n");
+        }
+        virt_addr += page_size;
+    }
+}
+
+void vma_unmap(uintptr_t va, size_t size, struct env *env) {
     return;
 }

@@ -94,7 +94,6 @@ static int sys_env_destroy(envid_t envid)
  * Returns the address to the start of the new mapping, on success,
  * or -1 if request could not be satisfied.
  */
-// MATTHIJS: TODO -> FLAGS
 static void *sys_vma_create(size_t size, int perm, int flags)
 {
     /* Virtual Memory Area allocation */
@@ -122,7 +121,7 @@ static void *sys_vma_create(size_t size, int perm, int flags)
 
     // MAP_POPULATE: Map the whole vma direct into page tables
     if (flags) {
-        vma_map_populate((uintptr_t) new_vma->va, new_vma->len, perm);
+        vma_map_populate((uintptr_t) new_vma->va, new_vma->len, perm, curenv);
     }
 
    return new_vma->va;
@@ -136,18 +135,20 @@ static int sys_vma_destroy(void *va, size_t size)
 {
     /* Virtual Memory Area deallocation */
     /* LAB 4: Your code here. */
+    struct vma *new_vma;
     struct vma *vma = vma_lookup(curenv, va);
     if (vma == NULL) {
         panic("Can not destroy a non-existing VMA\n");
+        return -1;
     }
-
-    // Can only destory 1 vma
-    if ((uintptr_t) va + size > (uintptr_t) vma->va + vma->len) {
+    // Can not destory > 1 vma at a time
+    else if ((uintptr_t) va + size > (uintptr_t) vma->va + vma->len) {
         panic("Trying to destroy more than 1 VMA\n");
         return -1;
     }
-    // Destroy whole vma
-    else if ((uintptr_t) va == (uintptr_t) vma->va &&
+
+    // Destroy 1 whole vma
+    if ((uintptr_t) va == (uintptr_t) vma->va &&
              size == vma->len) {
         // Remove from vma list
         // First in list
@@ -166,15 +167,44 @@ static int sys_vma_destroy(void *va, size_t size)
         }
 
         curenv->vma_num--;
-
-        // TODO: clear all entries and tables if needed
     } 
     // Destroy part of vma
+    // MATTHIJS: how about destroying part of huge page vma and allignment?
     else {
-        // MATTHIJS: TODO
+        // Destroy first part, keep second part
+        if ((uintptr_t) va == (uintptr_t) vma->va) {
+            vma->va = (void *) ((uintptr_t) va + size);
+            vma->len -= size;
+        } 
+        // Destroy last part, keep first part
+        else if ((uintptr_t) va + size == (uintptr_t) vma->va + vma->len) {
+            vma->len -= size;
+        }
+        // Destory a part in the middle
+        else {
+            // Create new vma at end
+            new_vma->type = vma->type;
+            new_vma->perm = vma->perm;
+            new_vma->va = (void *) ((uintptr_t) va + size);
+            new_vma->len = vma->len - size - ((uintptr_t) va - (uintptr_t)vma->va);
+
+            vma->len = vma->len - size - new_vma->len;
+
+            // Fix next and prev pointers
+            new_vma->next = vma->next;
+            if (new_vma->next != NULL) {
+                (new_vma->next)->prev = new_vma;
+            }
+
+            new_vma->prev = vma;
+            vma->next = new_vma;
+        }
     }
 
-   return -1;
+    // Unmap all pages 
+    // MATTHIJS: How to unmap tables?
+    vma_unmap((uintptr_t) va, size, curenv);
+    return 0;
 }
 
 /* Dispatches to the correct kernel function, passing the arguments. */
