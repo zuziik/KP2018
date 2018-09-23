@@ -96,10 +96,59 @@ static int sys_env_destroy(envid_t envid)
  */
 static void *sys_vma_create(size_t size, int perm, int flags)
 {
-   /* Virtual Memory Area allocation */
+    /* Virtual Memory Area allocation */
+    /* LAB 4: Your code here. */
+    uintptr_t va_start;
+    struct vma *new_vma, *tmp;
+    struct vma *vma = curenv->vma;
+    // MATTHIJS: how to get a free part of virt mem?
 
-   /* LAB 4: Your code here. */
-   return (void *)-1;
+    // Set new vma
+    new_vma->type = VMA_ANON;
+    new_vma->va = (void *) va_start;
+    new_vma->len = size;            // Allign size?
+    new_vma->perm = perm;
+
+    // Insert vma in vma list
+    // Vma list is empty
+    if (vma == NULL) {
+        curenv->vma = new_vma;
+        new_vma->next = NULL;
+        new_vma->prev = NULL;
+    }
+    // Append in front of list
+    else if (va_start + size < (uintptr_t) vma->va) {
+        vma->prev = new_vma;
+        new_vma->next = vma;
+        new_vma->prev = NULL;
+        curenv->vma = new_vma;
+    }
+    // All other cases
+    else {
+        while (true) {
+            // Append at end
+            if (vma->next == NULL) {
+                vma->next = new_vma;
+                new_vma->next = NULL;
+                new_vma->prev = vma;
+                break;
+            }
+            // Append after vma and before next
+            else if (va_start + size >= (uintptr_t) vma->va + vma->len &&
+                     va_start + size < (uintptr_t) (vma->next)->va) {
+                tmp = vma->next;
+                vma->next = new_vma;
+                new_vma->prev = vma;
+                tmp->prev = new_vma;            
+                new_vma->next = tmp;
+                break;
+            }
+
+            vma = vma->next;
+        }
+    }
+
+   return (void *)-1;       // MATTHIJS: fix return after function works
 }
 
 /*
@@ -108,9 +157,44 @@ static void *sys_vma_create(size_t size, int perm, int flags)
  */
 static int sys_vma_destroy(void *va, size_t size)
 {
-   /* Virtual Memory Area deallocation */
+    /* Virtual Memory Area deallocation */
+    /* LAB 4: Your code here. */
+    struct vma *vma = vma_lookup(curenv, va);
+    if (vma == NULL) {
+        panic("Can not destroy a non-existing VMA\n");
+    }
 
-   /* LAB 4: Your code here. */
+    // Can only destory 1 vma
+    if ((uintptr_t) va + size > (uintptr_t) vma->va + vma->len) {
+        panic("Trying to destroy more than 1 VMA\n");
+        return -1;
+    }
+    // Destroy whole vma
+    else if ((uintptr_t) va == (uintptr_t) vma->va &&
+             size == vma->len) {
+        // Remove from vma list
+        // First in list
+        if (vma->prev == NULL) {
+            curenv->vma = vma->next;
+            if (curenv->vma != NULL) {
+                (vma->next)->prev = NULL;
+            }
+        } 
+        // Not first entry
+        else {
+            (vma->prev)->next = vma->next;
+            if (vma->next != NULL) {
+                (vma->next)->prev = vma->prev;
+            }
+        }
+
+        // TODO: clear all entries and tables if needed
+    } 
+    // Destroy part of vma
+    else {
+        // MATTHIJS: TODO
+    }
+
    return -1;
 }
 
@@ -129,6 +213,9 @@ int64_t syscall(uint64_t syscallno, uint64_t a1, uint64_t a2, uint64_t a3,
         case SYS_cgetc: return sys_cgetc();
         case SYS_getenvid: return sys_getenvid();
         case SYS_env_destroy: return sys_env_destroy((envid_t) a1);
+        // MATTHIJS: arguments?
+        // case SYS_vma_create: return sys_vma_create();
+        // case sys_vma_destroy: return sys_vma_destroy();
         default: return -E_NO_SYS;
     }
 }

@@ -393,8 +393,7 @@ static void load_icode(struct env *e, uint8_t *binary)
      * 2. Map one RW page of VMA for UTEMP+PAGE_SIZE at virtual address UTEMP. */
 
     /* LAB 4: Your code here. */
-
-
+    // MATTHIJS: How does this work?
 
     cprintf("[LOAD ICODE] end\n");
 }
@@ -561,11 +560,27 @@ void env_run(struct env *e)
     curenv->env_status = ENV_RUNNING;
     curenv->env_runs += 1;
 
-    // physaddr_t *entry = page_walk(kern_pml4, (void *)USER_ENVS, 0);
-
-    // if (page2pa(pp) < limit)
-        // memset(page2kva(pp), 0x97, 128);
-
     load_pml4((void *)PADDR(curenv->env_pml4));
     env_pop_frame(&curenv->env_frame);
+}
+
+// MATTHIJS
+// Given the environment and a virtual address,
+// Return the vma that contains the virtual address
+struct vma *vma_lookup(struct env *e, void *va) {
+    struct vma *vma = e->vma;
+    uintptr_t virt_addr = (uintptr_t) va;
+
+    // Search linked list of vma's for correct vma
+    while (vma != NULL) {
+        // Check if this vma is the correct one
+        if (virt_addr >= (uintptr_t) vma->va &&
+            virt_addr < (uintptr_t)vma->va + vma->len) {
+            break;
+        }
+
+        vma = vma->next;
+    }
+
+    return vma;
 }

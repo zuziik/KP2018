@@ -239,6 +239,11 @@ void page_fault_handler(struct int_frame *frame)
     /* Handle kernel-mode page faults. */
     /* LAB 3: your code here. */
 
+    /* MATTHIJS
+     * kernel mode, can also use error code, looks better
+     * always error except when trying to access user space page,
+     * then do vma search and insert etc (when does this happen?)
+     */
     if (frame->rip >= KERNEL_VMA) {
         panic("Page fault on kernel address");
     }
@@ -246,11 +251,17 @@ void page_fault_handler(struct int_frame *frame)
     /* We have already handled kernel-mode exceptions, so if we get here, the
      * page fault has happened in user mode.
      */
+    /* MATTHIJS
+     * check if page fault is caused by invalid access or not loaded page
+     * using the error code.
+     * If invalid access, just error.
+     * If page not loaded, use vma and page_insert
+     */
 
+    // MATTHIJS: do not always destory the env!
     /* Destroy the environment that caused the fault. */
     cprintf("[%08x] user fault va %p ip %p\n",
         curenv->env_id, fault_va, frame->rip);
     print_int_frame(frame);
     env_destroy(curenv);
 }
-
