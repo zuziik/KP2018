@@ -15,6 +15,8 @@
 #include <kern/monitor.h>
 #include <kern/syscall.h>
 
+#include <kern/vma.h>
+
 struct env *envs = NULL;            /* All environments */
 static struct env *env_free_list;   /* Free environment list */
                                     /* (linked by env->env_link) */
@@ -562,25 +564,4 @@ void env_run(struct env *e)
 
     load_pml4((void *)PADDR(curenv->env_pml4));
     env_pop_frame(&curenv->env_frame);
-}
-
-// MATTHIJS
-// Given the environment and a virtual address,
-// Return the vma that contains the virtual address
-struct vma *vma_lookup(struct env *e, void *va) {
-    struct vma *vma = e->vma;
-    uintptr_t virt_addr = (uintptr_t) va;
-
-    // Search linked list of vma's for correct vma
-    while (vma != NULL) {
-        // Check if this vma is the correct one
-        if (virt_addr >= (uintptr_t) vma->va &&
-            virt_addr < (uintptr_t)vma->va + vma->len) {
-            break;
-        }
-
-        vma = vma->next;
-    }
-
-    return vma;
 }

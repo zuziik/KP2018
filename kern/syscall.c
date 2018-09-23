@@ -13,7 +13,7 @@
 #include <kern/syscall.h>
 #include <kern/console.h>
 
-// #include <kern/pmap.h>
+#include <kern/vma.h>
 
 extern void syscall64(void);
 
@@ -94,61 +94,38 @@ static int sys_env_destroy(envid_t envid)
  * Returns the address to the start of the new mapping, on success,
  * or -1 if request could not be satisfied.
  */
+// MATTHIJS: TODO -> FLAGS
 static void *sys_vma_create(size_t size, int perm, int flags)
 {
     /* Virtual Memory Area allocation */
     /* LAB 4: Your code here. */
-    uintptr_t va_start;
+    // MATTHIJS: Is this the correct way to search for free mem
+    uintptr_t va_start = vma_get_vmem(size, curenv->vma);
     struct vma *new_vma, *tmp;
-    struct vma *vma = curenv->vma;
-    // MATTHIJS: how to get a free part of virt mem?
+
+    // Could not get virtual mem for new vma
+    if (va_start == -1) {
+        return (void *) -1;
+    }
 
     // Set new vma
     new_vma->type = VMA_ANON;
     new_vma->va = (void *) va_start;
-    new_vma->len = size;            // Allign size?
+    new_vma->len = size;                // MATTHIJS: Allign size?
     new_vma->perm = perm;
+    curenv->vma_num++;
 
-    // Insert vma in vma list
-    // Vma list is empty
-    if (vma == NULL) {
-        curenv->vma = new_vma;
-        new_vma->next = NULL;
-        new_vma->prev = NULL;
-    }
-    // Append in front of list
-    else if (va_start + size < (uintptr_t) vma->va) {
-        vma->prev = new_vma;
-        new_vma->next = vma;
-        new_vma->prev = NULL;
-        curenv->vma = new_vma;
-    }
-    // All other cases
-    else {
-        while (true) {
-            // Append at end
-            if (vma->next == NULL) {
-                vma->next = new_vma;
-                new_vma->next = NULL;
-                new_vma->prev = vma;
-                break;
-            }
-            // Append after vma and before next
-            else if (va_start + size >= (uintptr_t) vma->va + vma->len &&
-                     va_start + size < (uintptr_t) (vma->next)->va) {
-                tmp = vma->next;
-                vma->next = new_vma;
-                new_vma->prev = vma;
-                tmp->prev = new_vma;            
-                new_vma->next = tmp;
-                break;
-            }
-
-            vma = vma->next;
-        }
+    // Insert the new vma
+    if (!vma_insert(new_vma, curenv)) {
+        return (void *) -1;
     }
 
-   return (void *)-1;       // MATTHIJS: fix return after function works
+    // MAP_POPULATE: Map the whole vma direct into page tables
+    if (flags) {
+        vma_map_populate((uintptr_t) new_vma->va, new_vma->len, perm);
+    }
+
+   return new_vma->va;
 }
 
 /*
@@ -187,6 +164,8 @@ static int sys_vma_destroy(void *va, size_t size)
                 (vma->next)->prev = vma->prev;
             }
         }
+
+        curenv->vma_num--;
 
         // TODO: clear all entries and tables if needed
     } 

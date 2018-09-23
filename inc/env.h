@@ -58,8 +58,9 @@ struct env {
     /* Address space */
     struct page_table *env_pml4;
 
-    // Linked list of vma's
+    // Linked list of vma's and current amount of vma's (128 max)
     struct vma *vma;
+    int vma_num;
 };
 
 /* Anonymous VMAs are zero-initialized whereas binary VMAs
