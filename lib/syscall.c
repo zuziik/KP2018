@@ -56,13 +56,11 @@ envid_t sys_getenvid(void)
 void *sys_vma_create(size_t size, int perm, int flags)
 {
     /* LAB 4: Your code here */
-    // MATTHIJS: how to call this
-    return NULL;
+    return (void *) syscall(SYS_vma_create, 1, size, perm, flags, 0, 0);
 }
 
 int sys_vma_destroy(void *va, size_t size)
 {
     /* LAB 4: Your code here */
-    // MATTHIJS: how to call this
-    return -E_NO_SYS;
+    return syscall(SYS_vma_destroy, 1, (unsigned long) va, size, 0, 0, 0);
 }

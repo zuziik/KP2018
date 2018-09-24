@@ -98,24 +98,18 @@ static void *sys_vma_create(size_t size, int perm, int flags)
 {
     /* Virtual Memory Area allocation */
     /* LAB 4: Your code here. */
-    // MATTHIJS: Is this the correct way to search for free mem
-    uintptr_t va_start = vma_get_vmem(size, curenv->vma);
-    struct vma *new_vma, *tmp;
+    uintptr_t va;
+    struct vma *new_vma;
 
     // Could not get virtual mem for new vma
-    if (va_start == -1) {
+    va = vma_get_vmem(size, curenv->vma);
+    if (va < 0) {
         return (void *) -1;
     }
 
-    // Set new vma
-    new_vma->type = VMA_ANON;
-    new_vma->va = (void *) va_start;
-    new_vma->len = size;                // MATTHIJS: Allign size?
-    new_vma->perm = perm;
-    curenv->vma_num++;
-
     // Insert the new vma
-    if (!vma_insert(new_vma, curenv)) {
+    new_vma = vma_insert(curenv, VMA_ANON, (void *) va, size, perm);
+    if (new_vma == NULL) {
         return (void *) -1;
     }
 
@@ -135,75 +129,76 @@ static int sys_vma_destroy(void *va, size_t size)
 {
     /* Virtual Memory Area deallocation */
     /* LAB 4: Your code here. */
-    struct vma *new_vma;
-    struct vma *vma = vma_lookup(curenv, va);
-    if (vma == NULL) {
-        panic("Can not destroy a non-existing VMA\n");
-        return -1;
-    }
-    // Can not destory > 1 vma at a time
-    else if ((uintptr_t) va + size > (uintptr_t) vma->va + vma->len) {
-        panic("Trying to destroy more than 1 VMA\n");
-        return -1;
-    }
+    return -1;
+    // struct vma *new_vma;
+    // struct vma *vma = vma_lookup(curenv, va);
+    // if (vma == NULL) {
+    //     panic("Can not destroy a non-existing VMA\n");
+    //     return -1;
+    // }
+    // // Can not destory > 1 vma at a time
+    // else if ((uintptr_t) va + size > (uintptr_t) vma->va + vma->len) {
+    //     panic("Trying to destroy more than 1 VMA\n");
+    //     return -1;
+    // }
 
-    // Destroy 1 whole vma
-    if ((uintptr_t) va == (uintptr_t) vma->va &&
-             size == vma->len) {
-        // Remove from vma list
-        // First in list
-        if (vma->prev == NULL) {
-            curenv->vma = vma->next;
-            if (curenv->vma != NULL) {
-                (vma->next)->prev = NULL;
-            }
-        } 
-        // Not first entry
-        else {
-            (vma->prev)->next = vma->next;
-            if (vma->next != NULL) {
-                (vma->next)->prev = vma->prev;
-            }
-        }
-        curenv->vma_num--;
-    } 
-    // Destroy part of vma
-    // MATTHIJS: how about destroying part of huge page vma and allignment?
-    else {
-        // Destroy first part, keep second part
-        if ((uintptr_t) va == (uintptr_t) vma->va) {
-            vma->va = (void *) ((uintptr_t) va + size);
-            vma->len -= size;
-        } 
-        // Destroy last part, keep first part
-        else if ((uintptr_t) va + size == (uintptr_t) vma->va + vma->len) {
-            vma->len -= size;
-        }
-        // Destory a part in the middle
-        else {
-            // Create new vma at end
-            new_vma->type = vma->type;
-            new_vma->perm = vma->perm;
-            new_vma->va = (void *) ((uintptr_t) va + size);
-            new_vma->len = vma->len - size - ((uintptr_t) va - (uintptr_t)vma->va);
+    // // Destroy 1 whole vma
+    // if ((uintptr_t) va == (uintptr_t) vma->va &&
+    //          size == vma->len) {
+    //     // Remove from vma list
+    //     // First in list
+    //     if (vma->prev == NULL) {
+    //         curenv->vma = vma->next;
+    //         if (curenv->vma != NULL) {
+    //             (vma->next)->prev = NULL;
+    //         }
+    //     } 
+    //     // Not first entry
+    //     else {
+    //         (vma->prev)->next = vma->next;
+    //         if (vma->next != NULL) {
+    //             (vma->next)->prev = vma->prev;
+    //         }
+    //     }
+    //     curenv->vma_num--;
+    // } 
+    // // Destroy part of vma
+    // // MATTHIJS: how about destroying part of huge page vma and allignment?
+    // else {
+    //     // Destroy first part, keep second part
+    //     if ((uintptr_t) va == (uintptr_t) vma->va) {
+    //         vma->va = (void *) ((uintptr_t) va + size);
+    //         vma->len -= size;
+    //     } 
+    //     // Destroy last part, keep first part
+    //     else if ((uintptr_t) va + size == (uintptr_t) vma->va + vma->len) {
+    //         vma->len -= size;
+    //     }
+    //     // Destory a part in the middle
+    //     else {
+    //         // Create new vma at end
+    //         new_vma->type = vma->type;
+    //         new_vma->perm = vma->perm;
+    //         new_vma->va = (void *) ((uintptr_t) va + size);
+    //         new_vma->len = vma->len - size - ((uintptr_t) va - (uintptr_t)vma->va);
 
-            vma->len = vma->len - size - new_vma->len;
+    //         vma->len = vma->len - size - new_vma->len;
 
-            // Fix next and prev pointers
-            new_vma->next = vma->next;
-            if (new_vma->next != NULL) {
-                (new_vma->next)->prev = new_vma;
-            }
+    //         // Fix next and prev pointers
+    //         new_vma->next = vma->next;
+    //         if (new_vma->next != NULL) {
+    //             (new_vma->next)->prev = new_vma;
+    //         }
 
-            new_vma->prev = vma;
-            vma->next = new_vma;
-            curenv->vma_num++;
-        }
-    }
+    //         new_vma->prev = vma;
+    //         vma->next = new_vma;
+    //         curenv->vma_num++;
+    //     }
+    // }
 
-    // Unmap all pages 
-    // MATTHIJS: How to unmap tables?
-    vma_unmap((uintptr_t) va, size, curenv);
+    // // Unmap all pages 
+    // // MATTHIJS: How to unmap tables?
+    // vma_unmap((uintptr_t) va, size, curenv);
     return 0;
 }
 
@@ -222,9 +217,9 @@ int64_t syscall(uint64_t syscallno, uint64_t a1, uint64_t a2, uint64_t a3,
         case SYS_cgetc: return sys_cgetc();
         case SYS_getenvid: return sys_getenvid();
         case SYS_env_destroy: return sys_env_destroy((envid_t) a1);
-        // MATTHIJS: arguments?
-        // case SYS_vma_create: return sys_vma_create();
-        // case sys_vma_destroy: return sys_vma_destroy();
+        // MATTHIJS: cast must be here else make error
+        case SYS_vma_create: return (uintptr_t) sys_vma_create((size_t) a1, (int) a2, (int) a3);
+        case SYS_vma_destroy: return sys_vma_destroy((void *) a1, (size_t) a2);
         default: return -E_NO_SYS;
     }
 }

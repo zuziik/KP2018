@@ -2,8 +2,9 @@
 #include <inc/env.h>
 #include <kern/pmap.h>
 
-struct vma *vma_lookup(struct env *e, void *va);
-int vma_insert(struct vma *new_vma, struct env *env);
-int vma_get_vmem(size_t size, struct vma *vma);
+struct vma *vma_lookup(struct env *env, void *va);
+struct vma *vma_insert(struct env *env, int type, void *va, size_t len, int perm);
+uintptr_t vma_get_vmem(size_t size, struct vma *vma);
 void vma_map_populate(uintptr_t va, size_t size, int perm, struct env *env);
 void vma_unmap(uintptr_t va, size_t size, struct env *env);
+struct vma *vma_get_last(struct vma *vma);

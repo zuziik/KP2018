@@ -60,7 +60,6 @@ struct env {
 
     // Linked list of vma's and current amount of vma's (128 max)
     struct vma *vma;
-    int vma_num;
 };
 
 /* Anonymous VMAs are zero-initialized whereas binary VMAs
@@ -81,6 +80,8 @@ struct vma {
     /* LAB 4: You may add more fields here, if required. */
     struct vma *next;
     struct vma *prev;
+
+    int is_free;
 };
 
 #endif /* !JOS_INC_ENV_H */

@@ -3,14 +3,18 @@
 // MATTHIJS
 // Given the environment and a virtual address,
 // Return the vma that contains the virtual address
-struct vma *vma_lookup(struct env *e, void *va) {
-    struct vma *vma = e->vma;
+struct vma *vma_lookup(struct env *env, void *va) {
+    struct vma *vma = env->vma;
     uintptr_t virt_addr = (uintptr_t) va;
 
     // Search linked list of vma's for correct vma
     while (vma != NULL) {
+        // Vma is free so not found
+        if (vma->is_free) {
+            return NULL;
+        }
         // Check if this vma is the correct one
-        if (virt_addr >= (uintptr_t) vma->va &&
+        else if (virt_addr >= (uintptr_t) vma->va &&
             virt_addr < (uintptr_t)vma->va + vma->len) {
             break;
         }
@@ -23,25 +27,28 @@ struct vma *vma_lookup(struct env *e, void *va) {
 
 // MATTHIJS
 // Try to insert a new vma into the vma list
-int vma_insert(struct vma *new_vma, struct env *env) {
-    struct vma *tmp;
+struct vma *vma_insert(struct env *env, int type, void *va, size_t len, int perm) {
+    struct vma *tmp, *new_vma;
     struct vma *vma = env->vma;
-    uintptr_t va_end = (uintptr_t) new_vma->va + new_vma->len;
+    uintptr_t va_end = (uintptr_t) va + len;
 
-    // At vma limit
-    if (env->vma_num == 128) {
-        return 0;
+    // Get new free vma from end of list
+    new_vma = vma_get_last(env->vma);
+    if (new_vma == NULL) {
+        return NULL;
     }
+
+    // Update new vma
+    new_vma->type = type;
+    new_vma->va = va;
+    new_vma->len = len;             // MATTHIJS: allign size?
+    new_vma->perm = perm;
+    new_vma->is_free = 0;
+    (new_vma->prev)->next = NULL;
 
     // Insert vma in vma list
-    // Vma list is empty
-    if (vma == NULL) {
-        env->vma = new_vma;
-        new_vma->next = NULL;
-        new_vma->prev = NULL;
-    }
-    // Append in front of list
-    else if (va_end < (uintptr_t) vma->va) {
+    // Append in front
+    if (vma->is_free || va_end < (uintptr_t) vma->va) {
         vma->prev = new_vma;
         new_vma->next = vma;
         new_vma->prev = NULL;
@@ -50,21 +57,24 @@ int vma_insert(struct vma *new_vma, struct env *env) {
     // All other cases
     else {
         while (true) {
-            // Append at end
-            if (vma->next == NULL) {
+            if (vma->next != NULL) {
+                // Append at end of not free part
+                // or between this and next vma
+                if ((vma->next)->is_free || 
+                    ((uintptr_t) new_vma->va >= (uintptr_t) vma->va + vma->len &&
+                     va_end < (uintptr_t) (vma->next)->va)) {
+                    tmp = vma->next;
+                    vma->next = new_vma;
+                    new_vma->prev = vma;
+                    tmp->prev = new_vma;            
+                    new_vma->next = tmp;
+                    break;
+                }
+            } else {
+                // Append at the complete end
                 vma->next = new_vma;
+                new_vma->prev = vma;
                 new_vma->next = NULL;
-                new_vma->prev = vma;
-                break;
-            }
-            // Append after vma and before next
-            else if ((uintptr_t) new_vma->va >= (uintptr_t) vma->va + vma->len &&
-                     va_end < (uintptr_t) (vma->next)->va) {
-                tmp = vma->next;
-                vma->next = new_vma;
-                new_vma->prev = vma;
-                tmp->prev = new_vma;            
-                new_vma->next = tmp;
                 break;
             }
 
@@ -72,35 +82,35 @@ int vma_insert(struct vma *new_vma, struct env *env) {
         }
     }
 
-    return 1;
+    return new_vma;
 }
 
 // MATTHIJS: Something can go wrong if forgot some mem you shouldnt use
 // Find a free piece of virt mem of size size
-int vma_get_vmem(size_t size, struct vma *vma) {
-    // No Vma alloced yet, so start at 0
-    if (vma == NULL) {
+uintptr_t vma_get_vmem(size_t size, struct vma *vma) {
+    // Get virt mem before first vma or at 0 if empty
+    if (vma->is_free) {
         return 0;
-    }
-
-    // Get virt mem before first vma
-    if (size <= (uintptr_t) vma->va) {
+    } else if (size <= (uintptr_t) vma->va) {
         return (uintptr_t) vma->va - size;
     }
 
     while (vma->next != NULL) {
+        // Append to end of list
+        if ((vma->next)->is_free) {
+            // Not enough space to KERNEL_VMA
+            if (size > KERNEL_VMA - ((uintptr_t) vma->va + vma->len)) {
+                break;
+            } else {
+                return (uintptr_t) vma->va + vma->len;
+            }
+        }
         // Found a hole after this vma
-        if (size <= (uintptr_t) (vma->next)->va - ((uintptr_t) vma->va + vma->len)) {
+        else if (size <= (uintptr_t) (vma->next)->va - ((uintptr_t) vma->va + vma->len)) {
             return (uintptr_t) vma->va + vma->len;
         }
 
         vma = vma->next;
-    }
-
-    // Found a hole between last vma and start of KERNEL_VMA
-    // MATTHIJS: user stack limit?
-    if (size <= KERNEL_VMA - ((uintptr_t) vma->va + vma->len)) {
-        return (uintptr_t) vma->va + vma->len;
     }
 
     return -1;
@@ -133,4 +143,22 @@ void vma_map_populate(uintptr_t va, size_t size, int perm, struct env *env) {
 
 void vma_unmap(uintptr_t va, size_t size, struct env *env) {
     return;
+}
+
+// Get the last vma from the list and check if its free
+struct vma *vma_get_last(struct vma *vma) {
+    if (vma == NULL) {
+        return NULL;
+    }
+
+    while (vma->next != NULL) {
+        vma = vma->next;
+    }
+
+    // Not free
+    if (vma->is_free == 0) {
+        return NULL;
+    } else {
+        return vma;
+    }
 }
