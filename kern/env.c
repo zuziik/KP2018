@@ -164,6 +164,45 @@ static int env_setup_vm(struct env *e)
     return 0;
 }
 
+// TODO map these pages somewhere!!
+static int env_setup_vma(struct env *e) {
+    cprintf("[ENV SETUP VMA] start\n");
+
+    size_t vma_size = ROUNDUP(sizeof(struct vma)*128, PAGE_SIZE);
+    struct page_info *p = NULL;
+    int i = 0;
+    struct vma* vma;
+
+    // TODO this is not finished, we need to map it to some virtual pages
+    // kernel? user? which address?
+    // and also, like this they are not contiguous, so maybe do it somewhere
+    // else using boot_alloc?
+    for (i = 0; i < vma_size; i += PAGE_SIZE) {
+        if (!(p = page_alloc(ALLOC_ZERO)))
+            return -E_NO_MEM;
+    }
+   
+
+    // set connections between the VMAs
+    // other fields are zero already
+    // including next field of the last one
+    // and prev field of the first one
+
+    // TODO - uncomment after vma is correctly allocated
+    // for (i = 0; i < 128; i++) {
+    //     vma[i].type = VMA_UNUSED;
+    //     if (i != 127)
+    //         vma[i].next = &vma[i+1];
+    //     if (i != 0)
+    //         vma[i].prev = &vma[i-1];
+    // }
+
+    // e->vma = vma;
+    cprintf("[ENV SETUP VMA] end\n");
+
+    return 0;
+}
+
 /*
  * Allocates and initializes a new environment.
  * On success, the new environment is stored in *newenv_store.
@@ -186,6 +225,9 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     if ((r = env_setup_vm(e)) < 0)
         return r;
 
+    /* Allocate and set up list of VMAs for this environment. */
+    if ((r = env_setup_vma(e)) < 0)
+        return r;
 
     /* Generate an env_id for this environment. */
     generation = (e->env_id + (1 << ENVGENSHIFT)) & ~(NENV - 1);
@@ -339,7 +381,7 @@ static void load_icode(struct env *e, uint8_t *binary)
 
     // Switching to env plm4 so that we can memcpy directly
     // using the mapping in this pml4
-    load_pml4((void *)PADDR(e->env_pml4));
+    // load_pml4((void *)PADDR(e->env_pml4));
     for (i = 0; i < number_of_segments; i++) {
         // next = ph[i];
         if (ph[i].p_type != ELF_PROG_LOAD) {
@@ -347,48 +389,31 @@ static void load_icode(struct env *e, uint8_t *binary)
         }
         // Allocates memory and initializes it with 0 bytes
         // Sets permissions to RW|RW
-        region_alloc(e, (void *)ph[i].p_va, ph[i].p_memsz);
-        memcpy((void *)ph[i].p_va, binary + ph[i].p_offset, ph[i].p_filesz);
+        if (vma_insert(e, VMA_BINARY, (void *)ph[i].p_va, ph[i].p_memsz,
+            PAGE_WRITE | PAGE_USER, binary + ph[i].p_offset, ph[i].p_filesz) == NULL) {
+            panic("Couldn't create VMA for a program segment");
+        }
+        // region_alloc(e, (void *)ph[i].p_va, ph[i].p_memsz);
+        // memcpy((void *)ph[i].p_va, binary + ph[i].p_offset, ph[i].p_filesz);
     }
     // Switching back to kern pml4 (switch to env pml4 will occur when
     // the process is started, not loaded)
-    load_pml4((void *)PADDR(kern_pml4));
+    // load_pml4((void *)PADDR(kern_pml4));
 
     e->env_frame.rip = eh->e_entry;
-    e->env_frame.rbp = USTACK_TOP;
-    e->env_frame.rsp = USTACK_TOP;
-    e->env_frame.ds = GDT_UDATA | 3;
-    e->env_frame.cs = GDT_UCODE | 3;
-    e->env_frame.rflags = 0;
-    e->env_frame.int_no = 0;
-    e->env_frame.err_code = 0;
-    e->env_frame.r15 = 0; 
-    e->env_frame.r14 = 0;
-    e->env_frame.r13 = 0;
-    e->env_frame.r12 = 0;
-    e->env_frame.r11 = 0;
-    e->env_frame.r10 = 0;
-    e->env_frame.r9 = 0;
-    e->env_frame.r8 = 0;
-    e->env_frame.rdi = 0;
-    e->env_frame.rsi = 0;
-    e->env_frame.rbx = 0;
-    e->env_frame.rdx = 0;
-    e->env_frame.rcx = 0;
-    e->env_frame.rax = 0;
-    e->env_frame.ss = GDT_UDATA | 3;
 
     /* Now map one page for the program's initial stack at virtual address
      * USTACKTOP - PGSIZE. */
 
     /* LAB 3: your code here. */
-    struct page_info *p = NULL;
+    // struct page_info *p = NULL;
 
-    /* Allocate a page for the page directory */
-    if (!(p = page_alloc(0)))
-        panic("Couldn't allocate memory for environment initial stack");
+    // /* Allocate a page for the page directory */
+    // if (!(p = page_alloc(0)))
+    //     panic("Couldn't allocate memory for environment initial stack");
 
-    page_insert(e->env_pml4, p, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_WRITE | PAGE_USER);
+    // page_insert(e->env_pml4, p, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_WRITE | PAGE_USER);
+    vma_insert(e, VMA_ANON, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_SIZE, PAGE_WRITE | PAGE_USER, NULL, 0);
 
     /* vmatest binary uses the following */
     /* 1. Map one RO page of VMA for UTEMP at virtual address UTEMP.

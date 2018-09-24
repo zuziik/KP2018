@@ -101,24 +101,27 @@ static void *sys_vma_create(size_t size, int perm, int flags)
     uintptr_t va;
     struct vma *new_vma;
 
-    // Could not get virtual mem for new vma
-    va = vma_get_vmem(size, curenv->vma);
+    // Round up the size
+    size_t size_r = ROUNDUP(size, PAGE_SIZE);
+
+    // Find available chunk of virtual memory
+    va = vma_get_vmem(size_r, curenv->vma);
     if (va < 0) {
         return (void *) -1;
     }
 
     // Insert the new vma
-    new_vma = vma_insert(curenv, VMA_ANON, (void *) va, size, perm);
+    new_vma = vma_insert(curenv, VMA_ANON, (void *) va, size_r, perm, NULL, 0);
     if (new_vma == NULL) {
         return (void *) -1;
     }
 
-    // MAP_POPULATE: Map the whole vma direct into page tables
+    // MAP_POPULATE: Map the whole vma directly into page tables
     if (flags) {
         vma_map_populate((uintptr_t) new_vma->va, new_vma->len, perm, curenv);
     }
 
-   return new_vma->va;
+    return new_vma->va;
 }
 
 /*
@@ -129,75 +132,61 @@ static int sys_vma_destroy(void *va, size_t size)
 {
     /* Virtual Memory Area deallocation */
     /* LAB 4: Your code here. */
+ 
+    // Round the addresses
+    uintptr_t va_start = ROUNDUP((uintptr_t) va, PAGE_SIZE);
+    uintptr_t va_end = ROUNDDOWN((uintptr_t) va + size, PAGE_SIZE);
+    size_t size_rounded = (size_t) va_end - va_start;
+
     struct vma *new_vma;
     struct vma *vma = vma_lookup(curenv, va);
     void *va_new;
     size_t len_new;
 
+
     if (vma == NULL) {
-        panic("Can not destroy a non-existing VMA\n");
+        panic("VA is not mapped anywhere, cannot unmap\n");
         return -1;
     }
-    // Can not destory > 1 vma at a time
-    else if ((uintptr_t) va + size > (uintptr_t) vma->va + vma->len) {
-        panic("Trying to destroy more than 1 VMA\n");
+    // Can not destory > 1 VMA at a time
+    else if (va_end > (uintptr_t) vma->va + vma->len) {
+        panic("Trying to unmap memory range spanning more than 1 VMA\n");
         return -1;
     }
 
-    // Destroy 1 whole vma
-    if ((uintptr_t) va == (uintptr_t) vma->va &&
-             size == vma->len) {
-        // Remove from vma list
-        // First in list
-        if (vma->prev == NULL) {
-            curenv->vma = vma->next;
-            if (curenv->vma != NULL) {
-                (vma->next)->prev = NULL;
-            }
-        } 
-        // Not first entry
-        else {
-            (vma->prev)->next = vma->next;
-            if (vma->next != NULL) {
-                (vma->next)->prev = vma->prev;
-            }
-        }
-
-        // Now reset all values and append at end
-        new_vma = vma_get_last(curenv->vma);
-        vma->va = NULL;
-        vma->next = NULL;
-        vma->is_free = 1;
-        new_vma->next = vma;
-        vma->prev = new_vma;
+    // Destroy 1 whole VMA
+    if (va_start == (uintptr_t) vma->va &&
+             size_rounded == vma->len) {
+        vma_make_unused(curenv, vma);
     }
-    // Destroy part of vma
-    // MATTHIJS: how about destroying part of huge page vma and allignment?
+
+    // Destroy part of VMA
     else {
         // Destroy first part, keep second part
-        if ((uintptr_t) va == (uintptr_t) vma->va) {
-            vma->va = (void *) ((uintptr_t) va + size);
-            vma->len -= size;
+        if (va_start == (uintptr_t) vma->va) {
+            vma->va = (void *) va_end;
+            vma->len -= size_rounded;
         } 
         // Destroy last part, keep first part
-        else if ((uintptr_t) va + size == (uintptr_t) vma->va + vma->len) {
-            vma->len -= size;
+        else if (va_end == (uintptr_t) vma->va + vma->len) {
+            vma->len -= size_rounded;
         }
         // Destory a part in the middle
         else {
             // Create new vma at end and insert it correctly
-            va_new = (void *) ((uintptr_t) va + size);
-            len_new = vma->len - size - ((uintptr_t) va - (uintptr_t)vma->va);
-            new_vma = vma_insert(curenv, vma->type,  va_new, len_new, vma->perm);
+            len_new = ((uintptr_t)vma->va + vma->len) - va_end;
 
-            // Fix length of first segment
-            vma->len = vma->len - size - new_vma->len;
+            // Fix length of first segment of the VMA
+            vma->len = vma->len - size_rounded - len_new;
+
+            // Now add the last VMA segment as a new VMA
+            new_vma = vma_insert(curenv, vma->type, (void *)va_end, len_new, vma->perm, NULL, 0);
+
         }
     }
 
-    // Unmap all pages 
-    // MATTHIJS: How to unmap tables?
-    vma_unmap((uintptr_t) va, size, curenv);
+    // Unmap all pages
+    vma_unmap(va_start, size_rounded, curenv);
     return 0;
 }
 

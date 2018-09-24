@@ -81,7 +81,8 @@ struct vma {
     struct vma *next;
     struct vma *prev;
 
-    int is_free;
+    void* binary_start;
+    uint64_t binary_size;
 };
 
 #endif /* !JOS_INC_ENV_H */
