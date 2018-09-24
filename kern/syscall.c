@@ -129,76 +129,75 @@ static int sys_vma_destroy(void *va, size_t size)
 {
     /* Virtual Memory Area deallocation */
     /* LAB 4: Your code here. */
-    return -1;
-    // struct vma *new_vma;
-    // struct vma *vma = vma_lookup(curenv, va);
-    // if (vma == NULL) {
-    //     panic("Can not destroy a non-existing VMA\n");
-    //     return -1;
-    // }
-    // // Can not destory > 1 vma at a time
-    // else if ((uintptr_t) va + size > (uintptr_t) vma->va + vma->len) {
-    //     panic("Trying to destroy more than 1 VMA\n");
-    //     return -1;
-    // }
+    struct vma *new_vma;
+    struct vma *vma = vma_lookup(curenv, va);
+    void *va_new;
+    size_t len_new;
 
-    // // Destroy 1 whole vma
-    // if ((uintptr_t) va == (uintptr_t) vma->va &&
-    //          size == vma->len) {
-    //     // Remove from vma list
-    //     // First in list
-    //     if (vma->prev == NULL) {
-    //         curenv->vma = vma->next;
-    //         if (curenv->vma != NULL) {
-    //             (vma->next)->prev = NULL;
-    //         }
-    //     } 
-    //     // Not first entry
-    //     else {
-    //         (vma->prev)->next = vma->next;
-    //         if (vma->next != NULL) {
-    //             (vma->next)->prev = vma->prev;
-    //         }
-    //     }
-    //     curenv->vma_num--;
-    // } 
-    // // Destroy part of vma
-    // // MATTHIJS: how about destroying part of huge page vma and allignment?
-    // else {
-    //     // Destroy first part, keep second part
-    //     if ((uintptr_t) va == (uintptr_t) vma->va) {
-    //         vma->va = (void *) ((uintptr_t) va + size);
-    //         vma->len -= size;
-    //     } 
-    //     // Destroy last part, keep first part
-    //     else if ((uintptr_t) va + size == (uintptr_t) vma->va + vma->len) {
-    //         vma->len -= size;
-    //     }
-    //     // Destory a part in the middle
-    //     else {
-    //         // Create new vma at end
-    //         new_vma->type = vma->type;
-    //         new_vma->perm = vma->perm;
-    //         new_vma->va = (void *) ((uintptr_t) va + size);
-    //         new_vma->len = vma->len - size - ((uintptr_t) va - (uintptr_t)vma->va);
+    if (vma == NULL) {
+        panic("Can not destroy a non-existing VMA\n");
+        return -1;
+    }
+    // Can not destory > 1 vma at a time
+    else if ((uintptr_t) va + size > (uintptr_t) vma->va + vma->len) {
+        panic("Trying to destroy more than 1 VMA\n");
+        return -1;
+    }
 
-    //         vma->len = vma->len - size - new_vma->len;
+    // Destroy 1 whole vma
+    if ((uintptr_t) va == (uintptr_t) vma->va &&
+             size == vma->len) {
+        // Remove from vma list
+        // First in list
+        if (vma->prev == NULL) {
+            curenv->vma = vma->next;
+            if (curenv->vma != NULL) {
+                (vma->next)->prev = NULL;
+            }
+        } 
+        // Not first entry
+        else {
+            (vma->prev)->next = vma->next;
+            if (vma->next != NULL) {
+                (vma->next)->prev = vma->prev;
+            }
+        }
 
-    //         // Fix next and prev pointers
-    //         new_vma->next = vma->next;
-    //         if (new_vma->next != NULL) {
-    //             (new_vma->next)->prev = new_vma;
-    //         }
+        // Now reset all values and append at end
+        new_vma = vma_get_last(curenv->vma);
+        vma->va = NULL;
+        vma->next = NULL;
+        vma->is_free = 1;
+        new_vma->next = vma;
+        vma->prev = new_vma;
+    }
+    // Destroy part of vma
+    // MATTHIJS: how about destroying part of huge page vma and allignment?
+    else {
+        // Destroy first part, keep second part
+        if ((uintptr_t) va == (uintptr_t) vma->va) {
+            vma->va = (void *) ((uintptr_t) va + size);
+            vma->len -= size;
+        } 
+        // Destroy last part, keep first part
+        else if ((uintptr_t) va + size == (uintptr_t) vma->va + vma->len) {
+            vma->len -= size;
+        }
+        // Destory a part in the middle
+        else {
+            // Create new vma at end and insert it correctly
+            va_new = (void *) ((uintptr_t) va + size);
+            len_new = vma->len - size - ((uintptr_t) va - (uintptr_t)vma->va);
+            new_vma = vma_insert(curenv, vma->type,  va_new, len_new, vma->perm);
 
-    //         new_vma->prev = vma;
-    //         vma->next = new_vma;
-    //         curenv->vma_num++;
-    //     }
-    // }
+            // Fix length of first segment
+            vma->len = vma->len - size - new_vma->len;
+        }
+    }
 
-    // // Unmap all pages 
-    // // MATTHIJS: How to unmap tables?
-    // vma_unmap((uintptr_t) va, size, curenv);
+    // Unmap all pages 
+    // MATTHIJS: How to unmap tables?
+    vma_unmap((uintptr_t) va, size, curenv);
     return 0;
 }
 

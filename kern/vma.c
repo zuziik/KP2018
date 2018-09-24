@@ -34,7 +34,7 @@ struct vma *vma_insert(struct env *env, int type, void *va, size_t len, int perm
 
     // Get new free vma from end of list
     new_vma = vma_get_last(env->vma);
-    if (new_vma == NULL) {
+    if (new_vma == NULL || vma->is_free == 0) {
         return NULL;
     }
 
@@ -155,10 +155,5 @@ struct vma *vma_get_last(struct vma *vma) {
         vma = vma->next;
     }
 
-    // Not free
-    if (vma->is_free == 0) {
-        return NULL;
-    } else {
-        return vma;
-    }
+    return vma;
 }
