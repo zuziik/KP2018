@@ -402,13 +402,18 @@ static void load_icode(struct env *e, uint8_t *binary)
 
     // Create a Vma for the user stack
     // page_insert(e->env_pml4, p, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_WRITE | PAGE_USER);
-    vma_insert(e, VMA_ANON, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_SIZE, PAGE_WRITE | PAGE_USER, NULL, NULL, 0);
+    vma_insert(e, VMA_ANON, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_SIZE, 
+               PAGE_WRITE | PAGE_USER, NULL, NULL, 0);
 
     /* vmatest binary uses the following */
     /* 1. Map one RO page of VMA for UTEMP at virtual address UTEMP.
      * 2. Map one RW page of VMA for UTEMP+PAGE_SIZE at virtual address UTEMP. */
 
     /* LAB 4: Your code here. */
+    vma_insert(e, VMA_ANON, UTEMP, PAGE_SIZE, PAGE_USER,
+               NULL, NULL, 0);
+    vma_insert(e, VMA_ANON, UTEMP+PAGE_SIZE, PAGE_SIZE, PAGE_WRITE | PAGE_USER,
+               NULL, NULL, 0);
 
     cprintf("[LOAD ICODE] end\n");
 }
