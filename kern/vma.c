@@ -85,7 +85,8 @@ struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
     struct vma *vma = env->vma;
 
     uintptr_t va_start = ROUNDDOWN((uintptr_t) va, PAGE_SIZE);
-    uintptr_t va_end = ROUNDUP((uintptr_t) va + len, PAGE_SIZE);
+    uintptr_t va_end = (uintptr_t) va + len;
+    // uintptr_t va_end = ROUNDUP((uintptr_t) va + len, PAGE_SIZE);
 
     // Get new free vma from end of list
     new_vma = vma_get_last(env->vma);
@@ -165,15 +166,16 @@ uintptr_t vma_get_vmem(size_t size, struct vma *vma) {
         // Append to end of list
         if ((vma->next)->type == VMA_UNUSED) {
             // Not enough space to KERNEL_VMA
-            if (size > KERNEL_VMA - ((uintptr_t) vma->va + vma->len)) {
+            if (size > KERNEL_VMA - ROUNDUP((uintptr_t) vma->va + vma->len, PAGE_SIZE)) {
                 break;
             } else {
-                return (uintptr_t) vma->va + vma->len;
+                return ROUNDUP((uintptr_t) vma->va + vma->len, PAGE_SIZE);
             }
         }
         // Found a hole after this vma
-        else if (size <= (uintptr_t) (vma->next)->va - ((uintptr_t) vma->va + vma->len)) {
-            return (uintptr_t) vma->va + vma->len;
+        else if (size <= (uintptr_t) (vma->next)->va - 
+                 ROUNDUP((uintptr_t) vma->va + vma->len, PAGE_SIZE)) {
+            return ROUNDUP((uintptr_t) vma->va + vma->len, PAGE_SIZE);
         }
 
         vma = vma->next;

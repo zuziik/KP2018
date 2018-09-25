@@ -1,0 +1,14 @@
+LAB 4
+Kernel Programming 2018 @VU
+by Matthijs Jansen and Zuzana Hromcova
+Version from Tuesday, September 25th
+
+Not everything works:
+- testbss: zeroing out the bss still missing, rest of file works
+  		   you can comment out the zero check in user/testbss.c and it will work
+
+- mapunmap / vmaspace: both crash on a page fault in user space with wrong permissions
+                       dont know yet what the cause of this is
+
+
+Score: 80 / 95

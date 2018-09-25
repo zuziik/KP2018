@@ -310,22 +310,13 @@ int page_fault_load_page(void *fault_va_aligned) {
 
                 uintptr_t va_aligned_start = (uintptr_t) fault_va_aligned;
                 uintptr_t va_aligned_end = (uintptr_t) fault_va_aligned + PAGE_SIZE;
-
                 uintptr_t va_start_kernel = (uintptr_t) vma->binary_start_kernel;
                 uintptr_t va_end_kernel = (uintptr_t) vma->binary_start_kernel + vma->binary_size;
-
                 uintptr_t va_start_user = (uintptr_t) vma->binary_start_user;
-                uintptr_t va_end_user = (uintptr_t) vma->binary_start_user + vma->binary_size;
-
-                uintptr_t va_dst_start = (va_aligned_start < va_start_user) ? va_start_user : va_aligned_start;
-                uintptr_t va_dst_end = (va_aligned_end > va_end_user) ? va_end_user : va_aligned_end;
-
-                uintptr_t va_src_start = (va_dst_start - va_start_user) + va_start_kernel;
-
-                cprintf("Going to memcpy from %llx to %llx size %llx\n", va_src_start, va_dst_start, va_dst_end - va_dst_start);
+                uintptr_t va_src_start = va_start_kernel + (va_aligned_start - va_start_user);
                 
                 load_pml4((void *)PADDR(curenv->env_pml4));
-                memcpy((void *) va_dst_start, (void *) va_src_start, va_dst_end - va_dst_start);
+                memcpy((void *) va_aligned_start, (void *) va_src_start, PAGE_SIZE);
                 load_pml4((void *)PADDR(kern_pml4));
             }
             return 1;

@@ -362,31 +362,35 @@ static void load_icode(struct env *e, uint8_t *binary)
 
     // Switching to env plm4 so that we can memcpy directly
     // using the mapping in this pml4
-    load_pml4((void *)PADDR(e->env_pml4));
+    // load_pml4((void *)PADDR(e->env_pml4));
     for (i = 0; i < number_of_segments; i++) {
         // Create a vma mapping for each program segment
         // Load binaries
         if (ph[i].p_type == ELF_PROG_LOAD) {
-            if (vma_insert(e, VMA_BINARY, (void *)ph[i].p_va, ph[i].p_memsz,
-                PAGE_WRITE | PAGE_USER, (void *)ph[i].p_va, binary + ph[i].p_offset, 
-                ph[i].p_filesz) == NULL) {
+            if (vma_insert(e, VMA_BINARY, (void *)ph[i].p_va, 
+                ph[i].p_memsz, PAGE_WRITE | PAGE_USER, 
+                (void *)ph[i].p_va, binary + ph[i].p_offset, ph[i].p_filesz) == NULL) {
                 panic("Couldn't create VMA for a program segment");
             }
             cprintf("ELF segment: kernel %llx, user %llx, size %llx", 
                 binary + ph[i].p_offset, ph[i].p_va, ph[i].p_filesz);
-        } 
-        // Also get the non-loadable parts as bss segment
-        else if (vma_insert(e, VMA_ANON, (void *)ph[i].p_va, ph[i].p_memsz,
-            PAGE_WRITE | PAGE_USER, NULL, NULL, 0) == NULL) {
-            panic("Couldn't create VMA for a program segment");
         }
+        // Also get the non-loadable parts as bss segment
+        else {
+            memset((void *)ph[i].p_va, 0, ROUNDUP(ph[i].p_memsz, PAGE_SIZE));
+        }
+
+        // else if (vma_insert(e, VMA_ANON, (void *)ph[i].p_va, ph[i].p_memsz,
+        //     PAGE_WRITE | PAGE_USER, NULL, NULL, 0) == NULL) {
+        //     panic("Couldn't create VMA for a program segment");
+        // }
 
         // region_alloc(e, (void *)ph[i].p_va, ph[i].p_memsz);
         // memcpy((void *)ph[i].p_va, binary + ph[i].p_offset, ph[i].p_filesz);
     }
     // Switching back to kern pml4 (switch to env pml4 will occur when
     // the process is started, not loaded)
-    load_pml4((void *)PADDR(kern_pml4));
+    // load_pml4((void *)PADDR(kern_pml4));
 
     e->env_frame.rip = eh->e_entry;
 
