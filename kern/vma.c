@@ -79,6 +79,7 @@ struct vma *vma_lookup(struct env *env, void *va) {
 */
 struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
     int perm, void *binary_start, uint64_t binary_size) {
+    cprintf("[VMA_INSERT] start\n");
 
     struct vma *tmp, *new_vma;
     struct vma *vma = env->vma;
@@ -90,7 +91,7 @@ struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
     new_vma = vma_get_last(env->vma);
 
     // No available slot - return NULL
-    if (new_vma == NULL || vma->type != VMA_UNUSED) {
+    if (new_vma == NULL || new_vma->type != VMA_UNUSED) {
         return NULL;
     }
 
@@ -143,6 +144,7 @@ struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
     }
 
     // Part of the address range is already in use, couldn' insert VMA
+    cprintf("[VMA_INSERT] could not insert\n");
     return NULL;
 }
 
@@ -209,14 +211,76 @@ void vma_map_populate(uintptr_t va, size_t size, int perm, struct env *env) {
 * Assume aligned addresses.
 */
 void vma_unmap(uintptr_t va, size_t size, struct env *env) {
-
     uintptr_t vi;
+    struct page_info *page;
+    struct page_table *pdp = NULL;
+    struct page_table *pd = NULL;
+    struct page_table *pt = NULL;
+    physaddr_t *entry;
+    int is_empty = 1;
+    int i;
 
+    // Remove and unmap the actual entries
     for (vi = va; vi < va + size; vi += PAGE_SIZE) {
         page_remove(env->env_pml4, (void *)vi);
     }
 
-    // TODO free page tables if needed (ask TAs)
+    // Start to remove page tables, then page dir tables, then page dir pointer tables
+    for (i = 0; i < 3; i++) {
+        // For each virtual address, get each page table and check if its empty
+        // If its empty, delete that table and set the entry to 0 in the tlb
+        for (vi = va; vi < va + size; vi += PAGE_SIZE) {
+            // Pml4 entry
+            entry = (env->env_pml4)->entries + PML4_INDEX((uintptr_t) va);
+            if (!(*entry & PAGE_PRESENT)) {
+                continue;
+            }
+
+            // PDP entry
+            pdp = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+
+            if (i == 0 || i == 1) {
+                entry = pdp->entries + PDPT_INDEX((uintptr_t) va);
+                if (!(*entry & PAGE_PRESENT)) {
+                    continue;
+                }
+                // Page dir entry
+                pd = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+            }
+
+            if (i == 0) {
+                entry = pd->entries + PAGE_DIR_INDEX((uintptr_t) va);
+                if (!(*entry & PAGE_PRESENT)) {
+                    continue;
+                }
+                // Page table
+                pt = (struct page_table *)KADDR(PAGE_ADDR(*entry));
+            }
+            
+            // Fix pointers for rest of the code
+            if (i == 1) {
+                pt = pd;
+            } else if (i == 2) {
+                pt = pdp;
+            }
+
+            // Check the whole page table. If its empty, delete its entry in the page dir
+            for (i = 0; i < PAGE_TABLE_ENTRIES; i++) {
+                if (pt->entries[i] & PAGE_PRESENT) {
+                    is_empty = 0;
+                    break;
+                }
+            }
+
+            // Clear the entry and fix the higher level table entry
+            if (is_empty) {
+                page = pa2page(PAGE_ADDR(*entry));
+                page_decref(page);
+                *entry = 0;
+                tlb_invalidate(env->env_pml4, entry);
+            }
+        }
+    }
 }
 
 /**

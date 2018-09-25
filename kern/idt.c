@@ -174,10 +174,12 @@ void int_dispatch(struct int_frame *frame)
 
     if (frame->int_no == INT_PAGE_FAULT) {
         page_fault_handler(frame);
+        return;
     }
     else if (frame->int_no == INT_BREAK) {
         print_int_frame(frame);
         monitor(frame);
+        return;
     }
     else if (frame->int_no == INT_SYSCALL) {
         frame->rax = syscall((unsigned long) frame->rdi, (unsigned long) frame->rsi,
@@ -192,6 +194,7 @@ void int_dispatch(struct int_frame *frame)
     if (frame->cs == GDT_KCODE) {
         panic("unhandled interrupt in kernel");
     } else {
+        cprintf("destroy in int_dispatch\n");
         env_destroy(curenv);
         return;
     }
@@ -229,6 +232,8 @@ void int_handler(struct int_frame *frame)
     int_dispatch(frame);
 
     /* Return to the current environment, which should be running. */
+    cprintf("%llx\n", curenv);
+    cprintf("%llx\n", curenv == NULL);
     assert(curenv && curenv->env_status == ENV_RUNNING);
     env_run(curenv);
 }
@@ -239,14 +244,10 @@ void page_fault_handler(struct int_frame *frame)
     int is_user = (frame->err_code & 4) == 4;           // User or kernel space
     int is_protection = (frame->err_code & 1) == 1;     // Protection or non-present page
     void *fault_va;
-    struct vma *vma;
-    struct page_info *page;
-    int alloc_flag = ALLOC_ZERO;
 
     /* Read the CR2 register to find the faulting address. */
     fault_va = read_cr2();
     uintptr_t fault_va_aligned = ROUNDDOWN((uintptr_t) fault_va, PAGE_SIZE);
-
     /* Handle kernel-mode page faults. */
     /* LAB 3: your code here. */
     /* MATTHIJS
@@ -255,7 +256,14 @@ void page_fault_handler(struct int_frame *frame)
      */
     // Kernel mode error
     if (!is_user) {
-        panic("Page fault in kernel mode\n");
+        // Kernel tries to read user space, load user space page
+        if (fault_va_aligned < KERNEL_VMA) {
+            if (page_fault_load_page((void *) fault_va_aligned)) {
+                return;
+            }
+        } else {
+            panic("Page fault in kernel mode - Kernel tries to read not mapped kernel space page\n");
+        }
     }
 
     /* We have already handled kernel-mode exceptions, so if we get here, the
@@ -268,29 +276,9 @@ void page_fault_handler(struct int_frame *frame)
         }
         // Page is not loaded, search in vma and map it in page tables
         else {
-            // Get vma associated with faulting virt addr
-            vma = vma_lookup(curenv, (void *)fault_va_aligned);
-            if (vma == NULL) {
-                panic("Page fault in user mode, try to access non existing page\n");
-            } else {
-                // There is a vma associated with this virt addr, now alloc the physical page
-                page = page_alloc(ALLOC_ZERO);
-                if (page == NULL) {
-                    panic("Page fault error - couldn't allocate new page\n");
-                } else if (page_insert(curenv->env_pml4, page, (void *) fault_va_aligned, vma->perm) != 0) {
-                    panic("Page fault error - couldn't map new page\n");
-                } else {
-                    // Copy the binary from kernel space to user space, for anonymous memory nothing more has to be done
-                    if (vma->type == VMA_BINARY) {
-                        load_pml4((void *)PADDR(curenv->env_pml4));
-                        uintptr_t va_src_start = (uintptr_t) vma->binary_start + ((uintptr_t) fault_va_aligned - (uintptr_t) vma->va);
-                        uintptr_t binary_end = (uintptr_t) vma->binary_start + vma->binary_size;
-                        uintptr_t va_src_end = ((va_src_start + PAGE_SIZE) < (binary_end)) ? (va_src_start + PAGE_SIZE) : binary_end;
-                        memcpy((void *) fault_va, (void *) va_src_start, va_src_end - va_src_start);
-                        load_pml4((void *)PADDR(kern_pml4));
-                    }
-                    return;
-                }
+            cprintf("[PAGE_FAULT_HANDLER] user mode - load and map page\n");
+            if (page_fault_load_page((void *) fault_va_aligned)) {
+                return;
             }
         }
     }
@@ -301,6 +289,41 @@ void page_fault_handler(struct int_frame *frame)
     print_int_frame(frame);
     env_destroy(curenv);
 }
+
+// Page fault has occured, load the page and map it
+int page_fault_load_page(void *fault_va_aligned) {
+    struct vma *vma;
+    struct page_info *page;
+
+    // Get vma associated with faulting virt addr
+    vma = vma_lookup(curenv, (void *)fault_va_aligned);
+    if (vma == NULL) {
+        panic("Page fault in user mode, try to access non existing page\n");
+    } else {
+        // There is a vma associated with this virt addr, now alloc the physical page
+        page = page_alloc(ALLOC_ZERO);
+        if (page == NULL) {
+            panic("Page fault error - couldn't allocate new page\n");
+        } else if (page_insert(curenv->env_pml4, page, (void *) fault_va_aligned, vma->perm) != 0) {
+            panic("Page fault error - couldn't map new page\n");
+        } else {
+            // Copy the binary from kernel space to user space, for anonymous memory nothing more has to be done
+            if (vma->type == VMA_BINARY) {
+                cprintf("loading a binary\n");
+                load_pml4((void *)PADDR(curenv->env_pml4));
+                uintptr_t va_src_start = (uintptr_t) vma->binary_start + ((uintptr_t) fault_va_aligned - (uintptr_t) vma->va);
+                uintptr_t binary_end = (uintptr_t) vma->binary_start + vma->binary_size;
+                uintptr_t va_src_end = ((va_src_start + PAGE_SIZE) < (binary_end)) ? (va_src_start + PAGE_SIZE) : binary_end;
+                // memcpy((void *) fault_va, (void *) va_src_start, va_src_end - va_src_start);
+                memcpy(fault_va_aligned, (void *) va_src_start, va_src_end - va_src_start);
+                load_pml4((void *)PADDR(kern_pml4));
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
 
 // void page_fault_handler(struct int_frame *frame)
 // {

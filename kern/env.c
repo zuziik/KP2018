@@ -164,42 +164,24 @@ static int env_setup_vm(struct env *e)
     return 0;
 }
 
-// TODO map these pages somewhere!!
+// Init all the values in the vma structure
 static int env_setup_vma(struct env *e) {
     cprintf("[ENV SETUP VMA] start\n");
+    struct vma *vma_list = e->vma;
+    int j;
 
-    size_t vma_size = ROUNDUP(sizeof(struct vma)*128, PAGE_SIZE);
-    struct page_info *p = NULL;
-    int i = 0;
-    struct vma* vma;
-
-    // TODO this is not finished, we need to map it to some virtual pages
-    // kernel? user? which address?
-    // and also, like this they are not contiguous, so maybe do it somewhere
-    // else using boot_alloc?
-    for (i = 0; i < vma_size; i += PAGE_SIZE) {
-        if (!(p = page_alloc(ALLOC_ZERO)))
-            return -E_NO_MEM;
+    for (j = 0; j < 128; j++) {
+        vma_list[j].type = VMA_UNUSED;       
+        vma_list[j].va = NULL;
+        vma_list[j].len = 0;  
+        vma_list[j].perm = 0;    
+        vma_list[j].binary_start = 0;
+        vma_list[j].binary_size = 0;
+        vma_list[j].next = (j == 127) ? NULL : &vma_list[j+1];
+        vma_list[j].prev = (j == 0) ? NULL : &vma_list[j-1];
     }
 
-
-    // set connections between the VMAs
-    // other fields are zero already
-    // including next field of the last one
-    // and prev field of the first one
-
-    // TODO - uncomment after vma is correctly allocated
-    // for (i = 0; i < 128; i++) {
-    //     vma[i].type = VMA_UNUSED;
-    //     if (i != 127)
-    //         vma[i].next = &vma[i+1];
-    //     if (i != 0)
-    //         vma[i].prev = &vma[i-1];
-    // }
-
-    // e->vma = vma;
     cprintf("[ENV SETUP VMA] end\n");
-
     return 0;
 }
 
@@ -225,7 +207,7 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     if ((r = env_setup_vm(e)) < 0)
         return r;
 
-    /* Allocate and set up list of VMAs for this environment. */
+    /* Set up list of VMAs for this environment. */
     if ((r = env_setup_vma(e)) < 0)
         return r;
 
@@ -269,9 +251,8 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     *newenv_store = e;
 
     cprintf("[%08x] new env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
-    return 0;
-
     cprintf("[ENV ALLOC] end\n");
+    return 0;
 }
 
 /*
@@ -369,7 +350,7 @@ static void load_icode(struct env *e, uint8_t *binary)
     cprintf("[LOAD ICODE] start\n");
 
     struct elf *eh = (struct elf *)binary;
-    struct elf_proghdr *ph, next;
+    struct elf_proghdr *ph;
     int i, number_of_segments;
 
     if (eh->e_magic != ELF_MAGIC)
@@ -378,17 +359,15 @@ static void load_icode(struct env *e, uint8_t *binary)
     ph = (struct elf_proghdr *) ((uint8_t *) eh + eh->e_phoff);
     number_of_segments = eh->e_phnum;
 
-
     // Switching to env plm4 so that we can memcpy directly
     // using the mapping in this pml4
-    // load_pml4((void *)PADDR(e->env_pml4));
+    load_pml4((void *)PADDR(e->env_pml4));
     for (i = 0; i < number_of_segments; i++) {
-        // next = ph[i];
         if (ph[i].p_type != ELF_PROG_LOAD) {
             continue;
         }
-        // Allocates memory and initializes it with 0 bytes
-        // Sets permissions to RW|RW
+
+        // Create a vma mapping for each program segment
         if (vma_insert(e, VMA_BINARY, (void *)ph[i].p_va, ph[i].p_memsz,
             PAGE_WRITE | PAGE_USER, binary + ph[i].p_offset, ph[i].p_filesz) == NULL) {
             panic("Couldn't create VMA for a program segment");
@@ -398,7 +377,7 @@ static void load_icode(struct env *e, uint8_t *binary)
     }
     // Switching back to kern pml4 (switch to env pml4 will occur when
     // the process is started, not loaded)
-    // load_pml4((void *)PADDR(kern_pml4));
+    load_pml4((void *)PADDR(kern_pml4));
 
     e->env_frame.rip = eh->e_entry;
 
@@ -406,12 +385,13 @@ static void load_icode(struct env *e, uint8_t *binary)
      * USTACKTOP - PGSIZE. */
 
     /* LAB 3: your code here. */
-    // struct page_info *p = NULL;
+    struct page_info *p = NULL;
 
-    // /* Allocate a page for the page directory */
-    // if (!(p = page_alloc(0)))
-    //     panic("Couldn't allocate memory for environment initial stack");
+    /* Allocate a page for the page directory */
+    if (!(p = page_alloc(0)))
+        panic("Couldn't allocate memory for environment initial stack");
 
+    // Create a Vma for the user stack
     // page_insert(e->env_pml4, p, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_WRITE | PAGE_USER);
     vma_insert(e, VMA_ANON, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_SIZE, PAGE_WRITE | PAGE_USER, NULL, 0);
 
@@ -420,7 +400,6 @@ static void load_icode(struct env *e, uint8_t *binary)
      * 2. Map one RW page of VMA for UTEMP+PAGE_SIZE at virtual address UTEMP. */
 
     /* LAB 4: Your code here. */
-    // MATTHIJS: How does this work?
 
     cprintf("[LOAD ICODE] end\n");
 }

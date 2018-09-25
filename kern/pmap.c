@@ -125,6 +125,13 @@ void mem_init(struct boot_info *boot_info)
     uintptr_t highest_addr = 0;
     uint32_t cr0;
     size_t i, n;
+
+    //----------------------------------------------------------------------------------
+    size_t j, vma_list_size;
+    struct vma *vma_list;
+    struct vma *vma_tmp;
+    //----------------------------------------------------------------------------------
+
     cprintf("[MEM_INIT] START\n");
 
     /* Find the amount of pages to allocate structs for. */
@@ -178,6 +185,15 @@ void mem_init(struct boot_info *boot_info)
 
     envs = boot_alloc(sizeof(struct env)*NENV);
 
+    //-----------------------------------------------------------------------------------------
+    cprintf("before allocating VMA\n");
+    for (i = 0; i < NENV; i++) {
+        vma_list = boot_alloc(sizeof(struct vma)*128);
+        envs[i].vma = vma_list;
+    }
+    cprintf("after allocating VMA\n");
+    //-----------------------------------------------------------------------------------------
+
     /*********************************************************************
      * Now that we've allocated the initial kernel data structures, we set
      * up the list of free physical pages. Once we've done so, all further
@@ -220,7 +236,6 @@ void mem_init(struct boot_info *boot_info)
 
     physaddr_t *addr;
     addr = page_walk(kern_pml4, (void *)USER_ENVS, 0);
-    cprintf("entry write? %d\n", *(addr) & PAGE_WRITE);
 
     /*********************************************************************
      * Use the physical memory that 'bootstack' refers to as the kernel
