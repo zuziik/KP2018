@@ -272,36 +272,26 @@ void page_fault_handler(struct int_frame *frame)
             vma = vma_lookup(curenv, (void *)fault_va_aligned);
             if (vma == NULL) {
                 panic("Page fault in user mode, try to access non existing page\n");
-            }
-
-            // Copy binary data to the page and map it
-            if (vma->type == VMA_BINARY) {
+            } else {
+                // There is a vma associated with this virt addr, now alloc the physical page
                 page = page_alloc(ALLOC_ZERO);
                 if (page == NULL) {
                     panic("Page fault error - couldn't allocate new page\n");
-                }
-                if (page_insert(curenv->env_pml4, page, (void *) fault_va_aligned, vma->perm) != 0) {
+                } else if (page_insert(curenv->env_pml4, page, (void *) fault_va_aligned, vma->perm) != 0) {
                     panic("Page fault error - couldn't map new page\n");
+                } else {
+                    // Copy the binary from kernel space to user space, for anonymous memory nothing more has to be done
+                    if (vma->type == VMA_BINARY) {
+                        load_pml4((void *)PADDR(curenv->env_pml4));
+                        uintptr_t va_src_start = (uintptr_t) vma->binary_start + ((uintptr_t) fault_va_aligned - (uintptr_t) vma->va);
+                        uintptr_t binary_end = (uintptr_t) vma->binary_start + vma->binary_size;
+                        uintptr_t va_src_end = ((va_src_start + PAGE_SIZE) < (binary_end)) ? (va_src_start + PAGE_SIZE) : binary_end;
+                        memcpy((void *) fault_va, (void *) va_src_start, va_src_end - va_src_start);
+                        load_pml4((void *)PADDR(kern_pml4));
+                    }
+                    return;
                 }
-                load_pml4((void *)PADDR(curenv->env_pml4));
-                uintptr_t va_src_start = (uintptr_t) vma->binary_start + ((uintptr_t) fault_va_aligned - (uintptr_t) vma->va);
-                uintptr_t binary_end = (uintptr_t) vma->binary_start + vma->binary_size;
-                uintptr_t va_src_end = ((va_src_start + PAGE_SIZE) < (binary_end)) ? (va_src_start + PAGE_SIZE) : binary_end;
-                memcpy((void *) fault_va, (void *) va_src_start, va_src_end - va_src_start);
-                load_pml4((void *)PADDR(kern_pml4));
             }
-
-            // Map the faulting page
-            else if (vma->type == VMA_ANON) {
-                page = page_alloc(ALLOC_ZERO);
-                if (page == NULL) {
-                    panic("Page fault error - couldn't allocate new page\n");
-                }
-                if (page_insert(curenv->env_pml4, page, (void *) fault_va_aligned, vma->perm) != 0) {
-                    panic("Page fault error - couldn't map new page\n");
-                } 
-            }
-
         }
     }
 
@@ -352,19 +342,19 @@ void page_fault_handler(struct int_frame *frame)
 //                 panic("Page fault in user mode, try to access non existing page\n");
 //             }
 
-//             // Want to map a huge page or not
-//             if (vma->perm & PAGE_HUGE) {
-//                 alloc_flag |= ALLOC_HUGE;
-//             }
+            // Want to map a huge page or not
+            // if (vma->perm & PAGE_HUGE) {
+            //     alloc_flag |= ALLOC_HUGE;
+            // }
 
-//             // Map page
-//             page = page_alloc(alloc_flag);
-//             if (page_insert(curenv->env_pml4, page, (void *) fault_va, vma->perm) != 0) {
-//                 panic("Could not map whole VMA in page tables with flag MAP_POPULATE\n");
-//             } else {
-//                 // Inserted without problem, dont destroy env
-//                 return;
-//             }
+            // // Map page
+            // page = page_alloc(alloc_flag);
+            // if (page_insert(curenv->env_pml4, page, (void *) fault_va, vma->perm) != 0) {
+            //     panic("Could not map whole VMA in page tables with flag MAP_POPULATE\n");
+            // } else {
+            //     // Inserted without problem, dont destroy env
+            //     return;
+            // }
 //         }
 //     }
 
