@@ -48,6 +48,9 @@
 /* User environments (read-only). */
 #define USER_ENVS (USER_PAGES - PDPT_SPAN)
 
+/* VMA lists */
+#define USER_VMAS (USER_ENVS - PDPT_SPAN)
+
 /* User stacks. */
 #define USER_TOP USER_ENVS
 #define UXSTACK_TOP USER_TOP

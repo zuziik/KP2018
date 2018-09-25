@@ -238,6 +238,16 @@ void mem_init(struct boot_info *boot_info)
     addr = page_walk(kern_pml4, (void *)USER_ENVS, 0);
 
     /*********************************************************************
+     * Map the 'VMAs' array as kernel RW, user NONE
+     */
+    vma_list_size = ROUNDUP(128 * sizeof(struct vma), PAGE_SIZE);
+
+    for (i = 0; i < NENV; i++) {
+        boot_map_region(kern_pml4, USER_VMAS + (i)*vma_list_size, vma_list_size,
+            PADDR(envs[i].vma), PAGE_WRITE | PAGE_NO_EXEC);
+    }
+
+    /*********************************************************************
      * Use the physical memory that 'bootstack' refers to as the kernel
      * stack. The kernel stack grows down from virtual address KSTACK_TOP.
      * We consider the entire range from [KSTACK_TOP-PTSIZE, KSTACK_TOP)
@@ -1145,6 +1155,7 @@ static void check_kern_pml4(void)
         case PML4_INDEX(KSTACK_TOP-1):
         case PML4_INDEX(USER_PAGES):
         case PML4_INDEX(USER_ENVS):
+        case PML4_INDEX(USER_VMAS):
             assert(pml4->entries[i] & PAGE_PRESENT);
             break;
         case PML4_INDEX(KERNEL_VMA):

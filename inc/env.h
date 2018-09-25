@@ -81,7 +81,8 @@ struct vma {
     struct vma *next;
     struct vma *prev;
 
-    void* binary_start;
+    void* binary_start_user;
+    void* binary_start_kernel;
     uint64_t binary_size;
 };
 

@@ -175,7 +175,8 @@ static int env_setup_vma(struct env *e) {
         vma_list[j].va = NULL;
         vma_list[j].len = 0;  
         vma_list[j].perm = 0;    
-        vma_list[j].binary_start = 0;
+        vma_list[j].binary_start_kernel = 0;
+        vma_list[j].binary_start_user = 0;
         vma_list[j].binary_size = 0;
         vma_list[j].next = (j == 127) ? NULL : &vma_list[j+1];
         vma_list[j].prev = (j == 0) ? NULL : &vma_list[j-1];
@@ -369,9 +370,11 @@ static void load_icode(struct env *e, uint8_t *binary)
 
         // Create a vma mapping for each program segment
         if (vma_insert(e, VMA_BINARY, (void *)ph[i].p_va, ph[i].p_memsz,
-            PAGE_WRITE | PAGE_USER, binary + ph[i].p_offset, ph[i].p_filesz) == NULL) {
+            PAGE_WRITE | PAGE_USER, (void *)ph[i].p_va, binary + ph[i].p_offset, ph[i].p_filesz) == NULL) {
             panic("Couldn't create VMA for a program segment");
         }
+
+        cprintf("ELF segment: kernel %llx, user %llx, size %llx", binary + ph[i].p_offset, ph[i].p_va, ph[i].p_filesz);
         // region_alloc(e, (void *)ph[i].p_va, ph[i].p_memsz);
         // memcpy((void *)ph[i].p_va, binary + ph[i].p_offset, ph[i].p_filesz);
     }
@@ -393,7 +396,7 @@ static void load_icode(struct env *e, uint8_t *binary)
 
     // Create a Vma for the user stack
     // page_insert(e->env_pml4, p, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_WRITE | PAGE_USER);
-    vma_insert(e, VMA_ANON, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_SIZE, PAGE_WRITE | PAGE_USER, NULL, 0);
+    vma_insert(e, VMA_ANON, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_SIZE, PAGE_WRITE | PAGE_USER, NULL, NULL, 0);
 
     /* vmatest binary uses the following */
     /* 1. Map one RO page of VMA for UTEMP at virtual address UTEMP.

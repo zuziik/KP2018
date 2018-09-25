@@ -78,7 +78,7 @@ struct vma *vma_lookup(struct env *env, void *va) {
 * is overlapping with the existing VMAs), returns NULL.
 */
 struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
-    int perm, void *binary_start, uint64_t binary_size) {
+    int perm, void *binary_start_user, void *binary_start_kernel, uint64_t binary_size) {
     cprintf("[VMA_INSERT] start\n");
 
     struct vma *tmp, *new_vma;
@@ -100,7 +100,8 @@ struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
     new_vma->va = (void *)va_start;
     new_vma->len = va_end - va_start;
     new_vma->perm = perm;
-    new_vma->binary_start = binary_start;
+    new_vma->binary_start_user = binary_start_user;
+    new_vma->binary_start_kernel = binary_start_kernel;
     new_vma->binary_size = binary_size;
 
     // Disconnect VMA from the end of VMA list
