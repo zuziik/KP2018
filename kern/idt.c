@@ -256,8 +256,10 @@ void page_fault_handler(struct int_frame *frame)
      */
     // Kernel mode error
     if (!is_user) {
+        cprintf("KERNEL MODE\n");
         // Kernel tries to read user space, load user space page
         if (fault_va_aligned < KERNEL_VMA) {
+            cprintf("KERNEL WANTS USER SPACE\n");
             if (page_fault_load_page((void *) fault_va_aligned)) {
                 return;
             }
@@ -265,21 +267,15 @@ void page_fault_handler(struct int_frame *frame)
             panic("Page fault in kernel mode - Kernel tries to read not mapped kernel space page\n");
         }
     }
-
     /* We have already handled kernel-mode exceptions, so if we get here, the
      * page fault has happened in user mode.
+     * Protection violations always lead to destruction of env
      */
-    else {
-        // User mode tries to read page is cant access
-        if (is_protection) {
-            panic("Page fault in user mode, protection violation\n");
-        }
+    else if (!is_protection) {
         // Page is not loaded, search in vma and map it in page tables
-        else {
-            cprintf("[PAGE_FAULT_HANDLER] user mode - load and map page\n");
-            if (page_fault_load_page((void *) fault_va_aligned)) {
-                return;
-            }
+        cprintf("[PAGE_FAULT_HANDLER] user mode - load and map page\n");
+        if (page_fault_load_page((void *) fault_va_aligned)) {
+            return;
         }
     }
 
@@ -298,7 +294,8 @@ int page_fault_load_page(void *fault_va_aligned) {
     // Get vma associated with faulting virt addr
     vma = vma_lookup(curenv, (void *)fault_va_aligned);
     if (vma == NULL) {
-        panic("Page fault in user mode, try to access non existing page\n");
+        cprintf("[PAGE_FAULT_LOAD_PAGE] va doesnt map to vma\n");
+        return 0;
     } else {
         // There is a vma associated with this virt addr, now alloc the physical page
         page = page_alloc(ALLOC_ZERO);

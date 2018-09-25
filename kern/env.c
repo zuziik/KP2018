@@ -364,17 +364,23 @@ static void load_icode(struct env *e, uint8_t *binary)
     // using the mapping in this pml4
     load_pml4((void *)PADDR(e->env_pml4));
     for (i = 0; i < number_of_segments; i++) {
-        if (ph[i].p_type != ELF_PROG_LOAD) {
-            continue;
-        }
-
         // Create a vma mapping for each program segment
-        if (vma_insert(e, VMA_BINARY, (void *)ph[i].p_va, ph[i].p_memsz,
-            PAGE_WRITE | PAGE_USER, (void *)ph[i].p_va, binary + ph[i].p_offset, ph[i].p_filesz) == NULL) {
+        // Load binaries
+        if (ph[i].p_type == ELF_PROG_LOAD) {
+            if (vma_insert(e, VMA_BINARY, (void *)ph[i].p_va, ph[i].p_memsz,
+                PAGE_WRITE | PAGE_USER, (void *)ph[i].p_va, binary + ph[i].p_offset, 
+                ph[i].p_filesz) == NULL) {
+                panic("Couldn't create VMA for a program segment");
+            }
+            cprintf("ELF segment: kernel %llx, user %llx, size %llx", 
+                binary + ph[i].p_offset, ph[i].p_va, ph[i].p_filesz);
+        } 
+        // Also get the non-loadable parts as bss segment
+        else if (vma_insert(e, VMA_ANON, (void *)ph[i].p_va, ph[i].p_memsz,
+            PAGE_WRITE | PAGE_USER, NULL, NULL, 0) == NULL) {
             panic("Couldn't create VMA for a program segment");
         }
 
-        cprintf("ELF segment: kernel %llx, user %llx, size %llx", binary + ph[i].p_offset, ph[i].p_va, ph[i].p_filesz);
         // region_alloc(e, (void *)ph[i].p_va, ph[i].p_memsz);
         // memcpy((void *)ph[i].p_va, binary + ph[i].p_offset, ph[i].p_filesz);
     }
