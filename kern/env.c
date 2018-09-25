@@ -181,7 +181,7 @@ static int env_setup_vma(struct env *e) {
         if (!(p = page_alloc(ALLOC_ZERO)))
             return -E_NO_MEM;
     }
-   
+
 
     // set connections between the VMAs
     // other fields are zero already

@@ -222,16 +222,14 @@ void vma_unmap(uintptr_t va, size_t size, struct env *env) {
     uintptr_t vi;
 
     for (vi = va; vi < va + size; vi += PAGE_SIZE) {
-        page_remove(env->env_pml4, (void *)vi);
         // TODO free page tables if needed (ask TAs)
     }
 
 }
 
 /**
-* Returns a pointer to an available VMA from the VMAs list.
-* It always returns the VMA from the END of the list.
-* If no VMA is available, returns NULL.
+* Returns a pointer to the last VMA from the VMAs list.
+* It does not matter if its free or not.
 */
 struct vma *vma_get_last(struct vma *vma) {
     if (vma == NULL) {
@@ -242,5 +240,5 @@ struct vma *vma_get_last(struct vma *vma) {
         vma = vma->next;
     }
 
-    return NULL;
+    return vma;
 }
