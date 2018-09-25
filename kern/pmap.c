@@ -124,7 +124,11 @@ void mem_init(struct boot_info *boot_info)
     struct mmap_entry *entry;
     uintptr_t highest_addr = 0;
     uint32_t cr0;
-    size_t i, n;
+    size_t i, j, n, vma_list_size;
+
+    struct vma *vma_list;
+    struct vma *vma_tmp;
+
     cprintf("[MEM_INIT] START\n");
 
     /* Find the amount of pages to allocate structs for. */
@@ -179,6 +183,30 @@ void mem_init(struct boot_info *boot_info)
     envs = boot_alloc(sizeof(struct env)*NENV);
 
     /*********************************************************************
+     * For each env, we will allocate a linked list of VMAs
+     */
+
+    cprintf("before allocating VMA\n");
+    cprintf("NENV = %d\n", NENV);
+    for (i = 0; i < NENV; i++) {
+        vma_list = boot_alloc(sizeof(struct vma)*128);
+        for (j = 0; j < 128; j++) {
+            vma_list[j].type = VMA_UNUSED;       
+            cprintf("*\n");
+            vma_list[j].va = NULL;
+            vma_list[j].len = 0;  
+            vma_list[j].perm = 0;    
+            vma_list[j].binary_start = 0;
+            vma_list[j].binary_size = 0;
+            vma_list[j].next = (j == 127) ? NULL : &vma_list[j+1];
+            vma_list[j].prev = (j == 0) ? NULL : &vma_list[j-1];
+        }
+        envs[i].vma = vma_list;
+        cprintf("success i = %d\n", i);
+    }
+    cprintf("after allocating VMA\n");
+
+    /*********************************************************************
      * Now that we've allocated the initial kernel data structures, we set
      * up the list of free physical pages. Once we've done so, all further
      * memory management will go through the page_* functions. In particular, we
@@ -221,6 +249,17 @@ void mem_init(struct boot_info *boot_info)
     physaddr_t *addr;
     addr = page_walk(kern_pml4, (void *)USER_ENVS, 0);
     cprintf("entry write? %d\n", *(addr) & PAGE_WRITE);
+
+    /*********************************************************************
+     * Map the 'VMAs' array as kernel RW, user NONE
+     */
+
+    vma_list_size = ROUNDUP(128 * sizeof(struct vma), PAGE_SIZE);
+
+    for (i = 0; i < NENV; i++) {
+        boot_map_region(kern_pml4, USER_ENVS - (i+1)*vma_list_size, vma_list_size,
+            PADDR(envs[i].vma), PAGE_WRITE | PAGE_NO_EXEC);
+    }
 
     /*********************************************************************
      * Use the physical memory that 'bootstack' refers to as the kernel

@@ -164,44 +164,6 @@ static int env_setup_vm(struct env *e)
     return 0;
 }
 
-// TODO map these pages somewhere!!
-static int env_setup_vma(struct env *e) {
-    cprintf("[ENV SETUP VMA] start\n");
-
-    size_t vma_size = ROUNDUP(sizeof(struct vma)*128, PAGE_SIZE);
-    struct page_info *p = NULL;
-    int i = 0;
-    struct vma* vma;
-
-    // TODO this is not finished, we need to map it to some virtual pages
-    // kernel? user? which address?
-    // and also, like this they are not contiguous, so maybe do it somewhere
-    // else using boot_alloc?
-    for (i = 0; i < vma_size; i += PAGE_SIZE) {
-        if (!(p = page_alloc(ALLOC_ZERO)))
-            return -E_NO_MEM;
-    }
-
-
-    // set connections between the VMAs
-    // other fields are zero already
-    // including next field of the last one
-    // and prev field of the first one
-
-    // TODO - uncomment after vma is correctly allocated
-    // for (i = 0; i < 128; i++) {
-    //     vma[i].type = VMA_UNUSED;
-    //     if (i != 127)
-    //         vma[i].next = &vma[i+1];
-    //     if (i != 0)
-    //         vma[i].prev = &vma[i-1];
-    // }
-
-    // e->vma = vma;
-    cprintf("[ENV SETUP VMA] end\n");
-
-    return 0;
-}
 
 /*
  * Allocates and initializes a new environment.
@@ -223,10 +185,6 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
 
     /* Allocate and set up the page directory for this environment. */
     if ((r = env_setup_vm(e)) < 0)
-        return r;
-
-    /* Allocate and set up list of VMAs for this environment. */
-    if ((r = env_setup_vma(e)) < 0)
         return r;
 
     /* Generate an env_id for this environment. */
