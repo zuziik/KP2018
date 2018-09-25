@@ -106,26 +106,22 @@ struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
     (new_vma->prev)->next = NULL;
 
     // Insert VMA in VMAs list
-
     // If all VMAs are unused or the new VMA has the smallest VA, append it in front
     if (vma->type == VMA_UNUSED || va_end < (uintptr_t) vma->va) {
         vma->prev = new_vma;
         new_vma->next = vma;
         new_vma->prev = NULL;
         env->vma = new_vma;
+        return new_vma;
     }
-
-    return new_vma;
 
     // Try to locate a place for VMA in the sorted VMAs list
     while (vma->next != NULL) {
         // Can we put it after the current VMA? Only if both is true:
         // 1. vma->end <= new_vma->start
         // 2. new_vma->end <= vma->next->start OR vma->next is unused
-
-        if (((uintptr_t) vma->va + vma->len <= va_start)
-            &&
-            (((vma->next)->type == VMA_UNUSED) || (va_end < (uintptr_t) (vma->next)->va)) ) {
+        if (((uintptr_t) vma->va + vma->len <= va_start) &&
+            (((vma->next)->type == VMA_UNUSED) || (va_end < (uintptr_t) (vma->next)->va))) {
 
             tmp = vma->next;
             vma->next = new_vma;
@@ -142,8 +138,7 @@ struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
     if ((uintptr_t) vma->va + vma->len <= va_start) {
         vma->next = new_vma;
         new_vma->prev = vma;
-        new_vma->next = NULL;
-                
+        new_vma->next = NULL; 
         return new_vma;
     }
 
@@ -155,7 +150,6 @@ struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
 // Find a free piece of virt mem of size size
 // assumes size to be aligned
 // returns -1 if there is no free slot or no contiguous region
-// TODO exclude ENVS, PAGES, VMAs???
 uintptr_t vma_get_vmem(size_t size, struct vma *vma) {
     // Get virt mem before first vma or at 0 if empty
     if (vma->type == VMA_UNUSED) {
@@ -193,8 +187,6 @@ uintptr_t vma_get_vmem(size_t size, struct vma *vma) {
 */
 void vma_map_populate(uintptr_t va, size_t size, int perm, struct env *env) {
     uintptr_t virt_addr = va;
-    size_t page_size = PAGE_SIZE;
-    int alloc_flag = ALLOC_ZERO;
     struct page_info *page;
 
     // Alloc physical page for each virt mem page and map it
@@ -206,7 +198,7 @@ void vma_map_populate(uintptr_t va, size_t size, int perm, struct env *env) {
         if (page_insert(env->env_pml4, page, (void *) virt_addr, perm) != 0) {
             panic("Could not map whole VMA in page tables with flag MAP_POPULATE\n");
         }
-        virt_addr += page_size;
+        virt_addr += PAGE_SIZE;
     }
 }
 
@@ -214,7 +206,6 @@ void vma_map_populate(uintptr_t va, size_t size, int perm, struct env *env) {
 * Unmaps the given range of virtual addresses from the environment
 * page tables, possibly destroys page tables / page directories /
 * page directory pointers and frees physical pages if necessary.
-* TODO ask TAs about this
 * Assume aligned addresses.
 */
 void vma_unmap(uintptr_t va, size_t size, struct env *env) {
@@ -222,9 +213,10 @@ void vma_unmap(uintptr_t va, size_t size, struct env *env) {
     uintptr_t vi;
 
     for (vi = va; vi < va + size; vi += PAGE_SIZE) {
-        // TODO free page tables if needed (ask TAs)
+        page_remove(env->env_pml4, (void *)vi);
     }
 
+    // TODO free page tables if needed (ask TAs)
 }
 
 /**
