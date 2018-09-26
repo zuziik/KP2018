@@ -77,15 +77,15 @@ struct vma *vma_lookup(struct env *env, void *va) {
 * If not possible (e.g. no available slot, or address range
 * is overlapping with the existing VMAs), returns NULL.
 */
-struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
-    int perm, void *binary_start_user, void *binary_start_kernel, uint64_t binary_size) {
+struct vma *vma_insert(struct env *env, int type, void *mem_va, size_t mem_size,
+    int perm, void *file_va, uint64_t file_size) {
     cprintf("[VMA_INSERT] start\n");
 
     struct vma *tmp, *new_vma;
     struct vma *vma = env->vma;
 
-    uintptr_t va_start = ROUNDDOWN((uintptr_t) va, PAGE_SIZE);
-    uintptr_t va_end = (uintptr_t) va + len;
+    uintptr_t va_start = ROUNDDOWN((uintptr_t) mem_va, PAGE_SIZE);
+    uintptr_t va_end = (uintptr_t) mem_va + mem_size;
     // uintptr_t va_end = ROUNDUP((uintptr_t) va + len, PAGE_SIZE);
 
     // Get new free vma from end of list
@@ -101,9 +101,10 @@ struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
     new_vma->va = (void *)va_start;
     new_vma->len = va_end - va_start;
     new_vma->perm = perm;
-    new_vma->binary_start_user = binary_start_user;
-    new_vma->binary_start_kernel = binary_start_kernel;
-    new_vma->binary_size = binary_size;
+    new_vma->mem_va = mem_va;
+    new_vma->file_va = file_va;
+    new_vma->mem_size = mem_size;
+    new_vma->file_size = file_size;
 
     // Disconnect VMA from the end of VMA list
     (new_vma->prev)->next = NULL;
@@ -157,7 +158,7 @@ struct vma *vma_insert(struct env *env, int type, void *va, size_t len,
 uintptr_t vma_get_vmem(size_t size, struct vma *vma) {
     // Get virt mem before first vma or at 0 if empty
     if (vma->type == VMA_UNUSED) {
-        return 0;
+        return -1;
     } else if (size <= (uintptr_t) vma->va) {
         return (uintptr_t) vma->va - size;
     }

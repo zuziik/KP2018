@@ -81,9 +81,10 @@ struct vma {
     struct vma *next;
     struct vma *prev;
 
-    void* binary_start_user;
-    void* binary_start_kernel;
-    uint64_t binary_size;
+    void* mem_va;
+    void* file_va;
+    uint64_t mem_size;
+    uint64_t file_size;
 };
 
 #endif /* !JOS_INC_ENV_H */

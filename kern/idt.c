@@ -310,13 +310,42 @@ int page_fault_load_page(void *fault_va_aligned) {
 
                 uintptr_t va_aligned_start = (uintptr_t) fault_va_aligned;
                 uintptr_t va_aligned_end = (uintptr_t) fault_va_aligned + PAGE_SIZE;
-                uintptr_t va_start_kernel = (uintptr_t) vma->binary_start_kernel;
-                uintptr_t va_end_kernel = (uintptr_t) vma->binary_start_kernel + vma->binary_size;
-                uintptr_t va_start_user = (uintptr_t) vma->binary_start_user;
-                uintptr_t va_src_start = va_start_kernel + (va_aligned_start - va_start_user);
-                
+
+                uintptr_t va_file_start = (uintptr_t) vma->file_va;
+                uintptr_t va_file_end = (uintptr_t) vma->file_va + vma->file_size;
+
+                uintptr_t va_mem_start = (uintptr_t) vma->mem_va;
+                uintptr_t va_mem_end = (uintptr_t) vma->mem_va + vma->mem_size;
+
+                uintptr_t va_src_start;//    = va_start_kernel + (va_aligned_start - va_start_user);
+                uintptr_t va_src_end;
+                uintptr_t va_dst_start;
+                uintptr_t va_dst_end;
+
+                uint64_t offset = va_file_start - va_mem_start;
+
+                // Destination start cannot be before mem start
+                va_dst_start = (va_mem_start < va_aligned_start) ? va_aligned_start : va_mem_start;
+
+                // Destination end cannot be after mem end
+                va_dst_end = (va_mem_end > va_aligned_end) ? va_aligned_end : va_mem_end;
+
+                // Source start cannot be before file start
+                va_src_start = (va_file_start < va_aligned_start + offset) ? va_aligned_start + offset : va_file_start;
+
+                // Source end cannot be after file end
+                va_src_end = (va_file_end > va_aligned_end + offset) ? va_aligned_end + offset : va_file_end;
+
+                // Allocated zeros
+                if (va_src_end <= va_src_start)
+                    return 1;
+
+                uint64_t src_size = va_src_end - va_src_start;
+                uint64_t dst_size = va_dst_end - va_dst_start;
+                uint64_t copy_size = (src_size < dst_size) ? src_size : dst_size;
+
                 load_pml4((void *)PADDR(curenv->env_pml4));
-                memcpy((void *) va_aligned_start, (void *) va_src_start, PAGE_SIZE);
+                memcpy((void *) va_dst_start, (void *) va_src_start, copy_size);
                 load_pml4((void *)PADDR(kern_pml4));
             }
             return 1;

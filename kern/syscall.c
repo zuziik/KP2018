@@ -110,15 +110,17 @@ static void *sys_vma_create(size_t size, int perm, int flags)
         return (void *) -1;
     }
 
+    cprintf("not panicked\n");
+
     // Insert the new vma
-    new_vma = vma_insert(curenv, VMA_ANON, (void *) va, size, perm, NULL, NULL, 0);
+    new_vma = vma_insert(curenv, VMA_ANON, (void *) va, size, perm | PAGE_USER, NULL, 0);
     if (new_vma == NULL) {
         return (void *) -1;
     }
 
     // MAP_POPULATE: Map the whole vma directly into page tables
     if (flags) {
-        vma_map_populate((uintptr_t) new_vma->va, new_vma->len, perm, curenv);
+        vma_map_populate((uintptr_t) new_vma->va, new_vma->len, perm | PAGE_USER, curenv);
     }
 
     return new_vma->va;
@@ -180,7 +182,7 @@ static int sys_vma_destroy(void *va, size_t size)
             vma->len = vma->len - size_rounded - len_new;
 
             // Now add the last VMA segment as a new VMA
-            new_vma = vma_insert(curenv, vma->type, (void *)va_end, len_new, vma->perm, NULL, NULL, 0);
+            new_vma = vma_insert(curenv, vma->type, (void *)va_end, len_new, vma->perm, NULL, 0);
 
         }
     }

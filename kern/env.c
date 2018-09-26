@@ -175,9 +175,10 @@ static int env_setup_vma(struct env *e) {
         vma_list[j].va = NULL;
         vma_list[j].len = 0;  
         vma_list[j].perm = 0;    
-        vma_list[j].binary_start_kernel = 0;
-        vma_list[j].binary_start_user = 0;
-        vma_list[j].binary_size = 0;
+        vma_list[j].mem_va = NULL;
+        vma_list[j].mem_size = 0;
+        vma_list[j].file_va = NULL;
+        vma_list[j].file_size = 0;
         vma_list[j].next = (j == 127) ? NULL : &vma_list[j+1];
         vma_list[j].prev = (j == 0) ? NULL : &vma_list[j-1];
     }
@@ -360,16 +361,13 @@ static void load_icode(struct env *e, uint8_t *binary)
     ph = (struct elf_proghdr *) ((uint8_t *) eh + eh->e_phoff);
     number_of_segments = eh->e_phnum;
 
-    // Switching to env plm4 so that we can memcpy directly
-    // using the mapping in this pml4
-    // load_pml4((void *)PADDR(e->env_pml4));
     for (i = 0; i < number_of_segments; i++) {
         // Create a vma mapping for each program segment
         // Load binaries
         if (ph[i].p_type == ELF_PROG_LOAD) {
             if (vma_insert(e, VMA_BINARY, (void *)ph[i].p_va, 
                 ph[i].p_memsz, PAGE_WRITE | PAGE_USER, 
-                (void *)ph[i].p_va, binary + ph[i].p_offset, ph[i].p_filesz) == NULL) {
+                binary + ph[i].p_offset, ph[i].p_filesz) == NULL) {
                 panic("Couldn't create VMA for a program segment");
             }
             cprintf("ELF segment: kernel %llx, user %llx, size %llx", 
@@ -380,18 +378,8 @@ static void load_icode(struct env *e, uint8_t *binary)
             memset((void *)ph[i].p_va, 0, ROUNDUP(ph[i].p_memsz, PAGE_SIZE));
         }
 
-        // else if (vma_insert(e, VMA_ANON, (void *)ph[i].p_va, ph[i].p_memsz,
-        //     PAGE_WRITE | PAGE_USER, NULL, NULL, 0) == NULL) {
-        //     panic("Couldn't create VMA for a program segment");
-        // }
-
-        // region_alloc(e, (void *)ph[i].p_va, ph[i].p_memsz);
-        // memcpy((void *)ph[i].p_va, binary + ph[i].p_offset, ph[i].p_filesz);
     }
-    // Switching back to kern pml4 (switch to env pml4 will occur when
-    // the process is started, not loaded)
-    // load_pml4((void *)PADDR(kern_pml4));
-
+    
     e->env_frame.rip = eh->e_entry;
 
     /* Now map one page for the program's initial stack at virtual address
@@ -405,9 +393,8 @@ static void load_icode(struct env *e, uint8_t *binary)
         panic("Couldn't allocate memory for environment initial stack");
 
     // Create a Vma for the user stack
-    // page_insert(e->env_pml4, p, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_WRITE | PAGE_USER);
     vma_insert(e, VMA_ANON, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_SIZE, 
-               PAGE_WRITE | PAGE_USER, NULL, NULL, 0);
+               PAGE_WRITE | PAGE_USER, NULL, 0);
 
     /* vmatest binary uses the following */
     /* 1. Map one RO page of VMA for UTEMP at virtual address UTEMP.
@@ -415,9 +402,9 @@ static void load_icode(struct env *e, uint8_t *binary)
 
     /* LAB 4: Your code here. */
     vma_insert(e, VMA_ANON, UTEMP, PAGE_SIZE, PAGE_USER,
-               NULL, NULL, 0);
+            NULL, 0);
     vma_insert(e, VMA_ANON, UTEMP+PAGE_SIZE, PAGE_SIZE, PAGE_WRITE | PAGE_USER,
-               NULL, NULL, 0);
+            NULL, 0);
 
     cprintf("[LOAD ICODE] end\n");
 }
