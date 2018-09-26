@@ -125,6 +125,13 @@ void mem_init(struct boot_info *boot_info)
     uintptr_t highest_addr = 0;
     uint32_t cr0;
     size_t i, n;
+
+    //----------------------------------------------------------------------------------
+    size_t j, vma_list_size;
+    struct vma *vma_list;
+    struct vma *vma_tmp;
+    //----------------------------------------------------------------------------------
+
     cprintf("[MEM_INIT] START\n");
 
     /* Find the amount of pages to allocate structs for. */
@@ -178,6 +185,11 @@ void mem_init(struct boot_info *boot_info)
 
     envs = boot_alloc(sizeof(struct env)*NENV);
 
+    for (i = 0; i < NENV; i++) {
+        vma_list = boot_alloc(sizeof(struct vma)*128);
+        envs[i].vma = vma_list;
+    }
+
     /*********************************************************************
      * Now that we've allocated the initial kernel data structures, we set
      * up the list of free physical pages. Once we've done so, all further
@@ -220,7 +232,16 @@ void mem_init(struct boot_info *boot_info)
 
     physaddr_t *addr;
     addr = page_walk(kern_pml4, (void *)USER_ENVS, 0);
-    cprintf("entry write? %d\n", *(addr) & PAGE_WRITE);
+
+    /*********************************************************************
+     * Map the 'VMAs' array as kernel RW, user NONE
+     */
+    vma_list_size = ROUNDUP(128 * sizeof(struct vma), PAGE_SIZE);
+
+    for (i = 0; i < NENV; i++) {
+        boot_map_region(kern_pml4, USER_VMAS + (i)*vma_list_size, vma_list_size,
+            PADDR(envs[i].vma), PAGE_WRITE | PAGE_NO_EXEC);
+    }
 
     /*********************************************************************
      * Use the physical memory that 'bootstack' refers to as the kernel
@@ -1130,6 +1151,7 @@ static void check_kern_pml4(void)
         case PML4_INDEX(KSTACK_TOP-1):
         case PML4_INDEX(USER_PAGES):
         case PML4_INDEX(USER_ENVS):
+        case PML4_INDEX(USER_VMAS):
             assert(pml4->entries[i] & PAGE_PRESENT);
             break;
         case PML4_INDEX(KERNEL_VMA):

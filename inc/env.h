@@ -57,6 +57,34 @@ struct env {
 
     /* Address space */
     struct page_table *env_pml4;
+
+    // Linked list of vma's and current amount of vma's (128 max)
+    struct vma *vma;
+};
+
+/* Anonymous VMAs are zero-initialized whereas binary VMAs
+ * are filled-in from the ELF binary.
+ */
+enum {
+    VMA_UNUSED,         // MATTHIJS: when to used unused?
+    VMA_ANON,
+    VMA_BINARY,
+};
+
+struct vma {
+    int type;           // See enum above
+    void *va;           // Start virt addr (alligned)
+    size_t len;         // Length of virt addr block (alligned)
+    int perm;           // Permissions
+
+    /* LAB 4: You may add more fields here, if required. */
+    struct vma *next;
+    struct vma *prev;
+
+    void* mem_va;       // Not alligned virt addr user space, binary dest
+    void* file_va;      // Not alligned virt addr kernel space, binary source
+    uint64_t mem_size;  // "..." length "... ", binary dest length
+    uint64_t file_size; // "..." length "... ", binary source length
 };
 
 #endif /* !JOS_INC_ENV_H */

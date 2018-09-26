@@ -1,0 +1,9 @@
+LAB 4
+Kernel Programming 2018 @VU
+by Matthijs Jansen and Zuzana Hromcova
+Version from Wednesday, September 26th
+
+Score: 95 / 95
+No bonus implemented
+All the standard features work
+A new file, kern/vma.c is created with helper functions for the vma datastructure

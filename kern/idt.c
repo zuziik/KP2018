@@ -10,6 +10,11 @@
 #include <kern/monitor.h>
 #include <kern/syscall.h>
 
+#include <kern/pmap.h>
+#include <kern/vma.h>
+
+#include <inc/string.h>
+
 extern void isr0(void);
 extern void isr1(void);
 extern void isr2(void);
@@ -49,7 +54,7 @@ static const char *int_names[256] = {
     [INT_ALIGNMENT] = "Alignment Check (#AC)",
     [INT_MCE] = "Machine Check (#MC)",
     [INT_SIMD] = "SIMD Floating-Point (#XF)",
-    [INT_SECURITY] = "Security (#SX)",
+    [INT_SYSCALL] = "System Call",
 };
 
 static struct idt_entry entries[256];
@@ -165,14 +170,16 @@ void int_dispatch(struct int_frame *frame)
     /* Handle processor exceptions. */
     /* LAB 3: your code here. */
 
-    cprintf("Interrupt: %s\n", get_int_name(frame->int_no));
+    cprintf("Interrupt: %s, %d\n", get_int_name(frame->int_no), frame->int_no);
 
     if (frame->int_no == INT_PAGE_FAULT) {
         page_fault_handler(frame);
+        return;
     }
     else if (frame->int_no == INT_BREAK) {
         print_int_frame(frame);
         monitor(frame);
+        return;
     }
     else if (frame->int_no == INT_SYSCALL) {
         frame->rax = syscall((unsigned long) frame->rdi, (unsigned long) frame->rsi,
@@ -187,6 +194,7 @@ void int_dispatch(struct int_frame *frame)
     if (frame->cs == GDT_KCODE) {
         panic("unhandled interrupt in kernel");
     } else {
+        cprintf("destroy in int_dispatch\n");
         env_destroy(curenv);
         return;
     }
@@ -231,21 +239,37 @@ void int_handler(struct int_frame *frame)
 void page_fault_handler(struct int_frame *frame)
 {
     cprintf("[PAGE FAULT HANDLER] start\n");
+    int is_user = (frame->err_code & 4) == 4;           // User or kernel space
+    int is_protection = (frame->err_code & 1) == 1;     // Protection or non-present page
     void *fault_va;
 
     /* Read the CR2 register to find the faulting address. */
     fault_va = read_cr2();
-
+    uintptr_t fault_va_aligned = ROUNDDOWN((uintptr_t) fault_va, PAGE_SIZE);
     /* Handle kernel-mode page faults. */
     /* LAB 3: your code here. */
 
-    if (frame->rip >= KERNEL_VMA) {
-        panic("Page fault on kernel address");
+    // Kernel mode error
+    if (!is_user) {
+        // Kernel tries to read user space, load user space page
+        if (fault_va_aligned < KERNEL_VMA) {
+            if (page_fault_load_page((void *) fault_va_aligned)) {
+                return;
+            }
+        } else {
+            panic("Page fault in kernel mode - Kernel tries to read not mapped kernel space page\n");
+        }
     }
-
     /* We have already handled kernel-mode exceptions, so if we get here, the
      * page fault has happened in user mode.
+     * Protection violations always lead to destruction of env
      */
+    else if (!is_protection) {
+        // Page is not loaded, search in vma and map it in page tables
+        if (page_fault_load_page((void *) fault_va_aligned)) {
+            return;
+        }
+    }
 
     /* Destroy the environment that caused the fault. */
     cprintf("[%08x] user fault va %p ip %p\n",
@@ -254,3 +278,70 @@ void page_fault_handler(struct int_frame *frame)
     env_destroy(curenv);
 }
 
+// Page fault has occured, load the page and map it
+int page_fault_load_page(void *fault_va_aligned) {
+    struct vma *vma;
+    struct page_info *page;
+
+    // Get vma associated with faulting virt addr
+    vma = vma_lookup(curenv, (void *)fault_va_aligned);
+    if (vma == NULL) {
+        return 0;
+    } else {
+        // There is a vma associated with this virt addr, now alloc the physical page
+        page = page_alloc(ALLOC_ZERO);
+        if (page == NULL) {
+            panic("Page fault error - couldn't allocate new page\n");
+        } else if (page_insert(curenv->env_pml4, page, (void *) fault_va_aligned, vma->perm) != 0) {
+            panic("Page fault error - couldn't map new page\n");
+        } else {
+            // Copy the binary from kernel space to user space, for anonymous memory nothing more has to be done
+            if (vma->type == VMA_BINARY) {
+                // Alligned start and end in userspace (dest)
+                uintptr_t va_aligned_start = (uintptr_t) fault_va_aligned;
+                uintptr_t va_aligned_end = (uintptr_t) fault_va_aligned + PAGE_SIZE;
+
+                // Not alligned start and end of binary in kernel space
+                uintptr_t va_file_start = (uintptr_t) vma->file_va;
+                uintptr_t va_file_end = (uintptr_t) vma->file_va + vma->file_size;
+
+                // Not alligned start and end in userspace (dest)
+                uintptr_t va_mem_start = (uintptr_t) vma->mem_va;
+                uintptr_t va_mem_end = (uintptr_t) vma->mem_va + vma->mem_size;
+
+                uintptr_t va_src_start;
+                uintptr_t va_src_end;
+                uintptr_t va_dst_start;
+                uintptr_t va_dst_end;
+
+                uint64_t offset = va_file_start - va_mem_start;
+
+                // Not alligned dest in user mem can not be before start of alligned page
+                va_dst_start = (va_mem_start < va_aligned_start) ? va_aligned_start : va_mem_start;
+
+                // Not alligned dest in user mem can not be after aligned end page
+                va_dst_end = (va_mem_end > va_aligned_end) ? va_aligned_end : va_mem_end;
+
+                // Source start cannot be before file start
+                va_src_start = (va_file_start < va_aligned_start + offset) ? va_aligned_start + offset : va_file_start;
+
+                // Source end cannot be after file end
+                va_src_end = (va_file_end > va_aligned_end + offset) ? va_aligned_end + offset : va_file_end;
+
+                // Allocated zeros
+                if (va_src_end <= va_src_start)
+                    return 1;
+
+                uint64_t src_size = va_src_end - va_src_start;
+                uint64_t dst_size = va_dst_end - va_dst_start;
+                uint64_t copy_size = (src_size < dst_size) ? src_size : dst_size;
+
+                load_pml4((void *)PADDR(curenv->env_pml4));
+                memcpy((void *) va_dst_start, (void *) va_src_start, copy_size);
+                load_pml4((void *)PADDR(kern_pml4));
+            }
+            return 1;
+        }
+    }
+    return 0;
+}

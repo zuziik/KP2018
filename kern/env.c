@@ -15,6 +15,8 @@
 #include <kern/monitor.h>
 #include <kern/syscall.h>
 
+#include <kern/vma.h>
+
 struct env *envs = NULL;            /* All environments */
 static struct env *env_free_list;   /* Free environment list */
                                     /* (linked by env->env_link) */
@@ -162,6 +164,29 @@ static int env_setup_vm(struct env *e)
     return 0;
 }
 
+// Init all the values in the vma structure
+static int env_setup_vma(struct env *e) {
+    cprintf("[ENV SETUP VMA] start\n");
+    struct vma *vma_list = e->vma;
+    int j;
+
+    for (j = 0; j < 128; j++) {
+        vma_list[j].type = VMA_UNUSED;       
+        vma_list[j].va = NULL;
+        vma_list[j].len = 0;  
+        vma_list[j].perm = 0;    
+        vma_list[j].mem_va = NULL;
+        vma_list[j].mem_size = 0;
+        vma_list[j].file_va = NULL;
+        vma_list[j].file_size = 0;
+        vma_list[j].next = (j == 127) ? NULL : &vma_list[j+1];
+        vma_list[j].prev = (j == 0) ? NULL : &vma_list[j-1];
+    }
+
+    cprintf("[ENV SETUP VMA] end\n");
+    return 0;
+}
+
 /*
  * Allocates and initializes a new environment.
  * On success, the new environment is stored in *newenv_store.
@@ -184,6 +209,9 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     if ((r = env_setup_vm(e)) < 0)
         return r;
 
+    /* Set up list of VMAs for this environment. */
+    if ((r = env_setup_vma(e)) < 0)
+        return r;
 
     /* Generate an env_id for this environment. */
     generation = (e->env_id + (1 << ENVGENSHIFT)) & ~(NENV - 1);
@@ -225,9 +253,8 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     *newenv_store = e;
 
     cprintf("[%08x] new env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
-    return 0;
-
     cprintf("[ENV ALLOC] end\n");
+    return 0;
 }
 
 /*
@@ -325,7 +352,7 @@ static void load_icode(struct env *e, uint8_t *binary)
     cprintf("[LOAD ICODE] start\n");
 
     struct elf *eh = (struct elf *)binary;
-    struct elf_proghdr *ph, next;
+    struct elf_proghdr *ph;
     int i, number_of_segments;
 
     if (eh->e_magic != ELF_MAGIC)
@@ -334,47 +361,25 @@ static void load_icode(struct env *e, uint8_t *binary)
     ph = (struct elf_proghdr *) ((uint8_t *) eh + eh->e_phoff);
     number_of_segments = eh->e_phnum;
 
-
-    // Switching to env plm4 so that we can memcpy directly
-    // using the mapping in this pml4
-    load_pml4((void *)PADDR(e->env_pml4));
     for (i = 0; i < number_of_segments; i++) {
-        // next = ph[i];
-        if (ph[i].p_type != ELF_PROG_LOAD) {
-            continue;
+        // Create a vma mapping for each program segment
+        // Load binaries
+        if (ph[i].p_type == ELF_PROG_LOAD) {
+            if (vma_insert(e, VMA_BINARY, (void *)ph[i].p_va, 
+                ph[i].p_memsz, PAGE_WRITE | PAGE_USER, 
+                binary + ph[i].p_offset, ph[i].p_filesz) == NULL) {
+                panic("Couldn't create VMA for a program segment");
+            }
+            cprintf("ELF segment: kernel %llx, user %llx, size %llx", 
+                binary + ph[i].p_offset, ph[i].p_va, ph[i].p_filesz);
         }
-        // Allocates memory and initializes it with 0 bytes
-        // Sets permissions to RW|RW
-        region_alloc(e, (void *)ph[i].p_va, ph[i].p_memsz);
-        memcpy((void *)ph[i].p_va, binary + ph[i].p_offset, ph[i].p_filesz);
+        // Also get the non-loadable parts as bss segment
+        else {
+            memset((void *)ph[i].p_va, 0, ROUNDUP(ph[i].p_memsz, PAGE_SIZE));
+        }
     }
-    // Switching back to kern pml4 (switch to env pml4 will occur when
-    // the process is started, not loaded)
-    load_pml4((void *)PADDR(kern_pml4));
-
+    
     e->env_frame.rip = eh->e_entry;
-    e->env_frame.rbp = USTACK_TOP;
-    e->env_frame.rsp = USTACK_TOP;
-    e->env_frame.ds = GDT_UDATA | 3;
-    e->env_frame.cs = GDT_UCODE | 3;
-    e->env_frame.rflags = 0;
-    e->env_frame.int_no = 0;
-    e->env_frame.err_code = 0;
-    e->env_frame.r15 = 0; 
-    e->env_frame.r14 = 0;
-    e->env_frame.r13 = 0;
-    e->env_frame.r12 = 0;
-    e->env_frame.r11 = 0;
-    e->env_frame.r10 = 0;
-    e->env_frame.r9 = 0;
-    e->env_frame.r8 = 0;
-    e->env_frame.rdi = 0;
-    e->env_frame.rsi = 0;
-    e->env_frame.rbx = 0;
-    e->env_frame.rdx = 0;
-    e->env_frame.rcx = 0;
-    e->env_frame.rax = 0;
-    e->env_frame.ss = GDT_UDATA | 3;
 
     /* Now map one page for the program's initial stack at virtual address
      * USTACKTOP - PGSIZE. */
@@ -386,7 +391,19 @@ static void load_icode(struct env *e, uint8_t *binary)
     if (!(p = page_alloc(0)))
         panic("Couldn't allocate memory for environment initial stack");
 
-    page_insert(e->env_pml4, p, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_WRITE | PAGE_USER);
+    // Create a Vma for the user stack
+    vma_insert(e, VMA_ANON, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_SIZE, 
+               PAGE_WRITE | PAGE_USER, NULL, 0);
+
+    /* vmatest binary uses the following */
+    /* 1. Map one RO page of VMA for UTEMP at virtual address UTEMP.
+     * 2. Map one RW page of VMA for UTEMP+PAGE_SIZE at virtual address UTEMP. */
+
+    /* LAB 4: Your code here. */
+    vma_insert(e, VMA_ANON, UTEMP, PAGE_SIZE, PAGE_USER,
+            NULL, 0);
+    vma_insert(e, VMA_ANON, UTEMP+PAGE_SIZE, PAGE_SIZE, PAGE_WRITE | PAGE_USER,
+            NULL, 0);
 
     cprintf("[LOAD ICODE] end\n");
 }
@@ -552,11 +569,6 @@ void env_run(struct env *e)
     curenv = e;
     curenv->env_status = ENV_RUNNING;
     curenv->env_runs += 1;
-
-    // physaddr_t *entry = page_walk(kern_pml4, (void *)USER_ENVS, 0);
-
-    // if (page2pa(pp) < limit)
-        // memset(page2kva(pp), 0x97, 128);
 
     load_pml4((void *)PADDR(curenv->env_pml4));
     env_pop_frame(&curenv->env_frame);

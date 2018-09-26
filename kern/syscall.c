@@ -13,7 +13,7 @@
 #include <kern/syscall.h>
 #include <kern/console.h>
 
-// #include <kern/pmap.h>
+#include <kern/vma.h>
 
 extern void syscall64(void);
 
@@ -85,6 +85,110 @@ static int sys_env_destroy(envid_t envid)
     return 0;
 }
 
+/*
+ * Creates a new anonymous mapping somewhere in the virtual address space.
+ *
+ * Supported flags: 
+ *     MAP_POPULATE
+ * 
+ * Returns the address to the start of the new mapping, on success,
+ * or -1 if request could not be satisfied.
+ */
+static void *sys_vma_create(size_t size, int perm, int flags)
+{
+    /* Virtual Memory Area allocation */
+    /* LAB 4: Your code here. */
+    uintptr_t va;
+    struct vma *new_vma;
+
+    // Round up the size
+    size_t size_r = ROUNDUP(size, PAGE_SIZE);
+
+    // Find available chunk of virtual memory
+    va = vma_get_vmem(size_r, curenv->vma);
+    if ((long long) va < 0) {
+        return (void *) -1;
+    }
+
+    // Insert the new vma
+    new_vma = vma_insert(curenv, VMA_ANON, (void *) va, size, perm | PAGE_USER, NULL, 0);
+    if (new_vma == NULL) {
+        return (void *) -1;
+    }
+
+    // MAP_POPULATE: Map the whole vma directly into page tables
+    if (flags) {
+        vma_map_populate((uintptr_t) new_vma->va, new_vma->len, perm | PAGE_USER, curenv);
+    }
+
+    return new_vma->va;
+}
+
+/*
+ * Unmaps the specified range of memory starting at 
+ * virtual address 'va', 'size' bytes long.
+ */
+static int sys_vma_destroy(void *va, size_t size)
+{
+    /* Virtual Memory Area deallocation */
+    /* LAB 4: Your code here. */
+ 
+    // Round the addresses
+    uintptr_t va_start = ROUNDUP((uintptr_t) va, PAGE_SIZE);
+    uintptr_t va_end = ROUNDDOWN((uintptr_t) va + size, PAGE_SIZE);
+    size_t size_rounded = (size_t) va_end - va_start;
+
+    struct vma *new_vma;
+    struct vma *vma = vma_lookup(curenv, va);
+    void *va_new;
+    size_t len_new;
+
+    if (vma == NULL) {
+        panic("VA is not mapped anywhere, cannot unmap\n");
+        return -1;
+    }
+    // Can not destory > 1 VMA at a time
+    else if (va_end > (uintptr_t) vma->va + vma->len) {
+        panic("Trying to unmap memory range spanning more than 1 VMA\n");
+        return -1;
+    }
+
+    // Destroy 1 whole VMA
+    if (va_start == (uintptr_t) vma->va &&
+             size_rounded == vma->len) {
+        vma_make_unused(curenv, vma);
+    }
+
+    // Destroy part of VMA
+    else {
+        // Destroy first part, keep second part
+        if (va_start == (uintptr_t) vma->va) {
+            vma->va = (void *) va_end;
+            vma->len -= size_rounded;
+        } 
+        // Destroy last part, keep first part
+        else if (va_end == (uintptr_t) vma->va + vma->len) {
+            vma->len -= size_rounded;
+        }
+        // Destory a part in the middle
+        else {
+            // Create new vma at end and insert it correctly
+            len_new = ((uintptr_t)vma->va + vma->len) - va_end;
+
+            // Fix length of first segment of the VMA
+            vma->len = vma->len - size_rounded - len_new;
+
+            // Now add the last VMA segment as a new VMA
+            new_vma = vma_insert(curenv, vma->type, (void *)va_end, len_new, vma->perm, NULL, 0);
+
+        }
+    }
+
+    // Unmap all pages
+    vma_unmap(va_start, size_rounded, curenv);
+    return 0;
+}
+
 /* Dispatches to the correct kernel function, passing the arguments. */
 int64_t syscall(uint64_t syscallno, uint64_t a1, uint64_t a2, uint64_t a3,
         uint64_t a4, uint64_t a5)
@@ -100,6 +204,8 @@ int64_t syscall(uint64_t syscallno, uint64_t a1, uint64_t a2, uint64_t a3,
         case SYS_cgetc: return sys_cgetc();
         case SYS_getenvid: return sys_getenvid();
         case SYS_env_destroy: return sys_env_destroy((envid_t) a1);
+        case SYS_vma_create: return (uintptr_t) sys_vma_create((size_t) a1, (int) a2, (int) a3);
+        case SYS_vma_destroy: return sys_vma_destroy((void *) a1, (size_t) a2);
         default: return -E_NO_SYS;
     }
 }

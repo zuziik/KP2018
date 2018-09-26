@@ -27,7 +27,8 @@ KERN_SRCFILES := \
 	kern/syscall.c \
 	lib/printfmt.c \
 	lib/readline.c \
-	lib/string.c
+	lib/string.c \
+	kern/vma.c
 
 # Only build files if they exist.
 KERN_SRCFILES := $(wildcard $(KERN_SRCFILES))
@@ -46,7 +47,11 @@ KERN_BINFILES := \
 	user/faultread \
 	user/faultreadkernel \
 	user/faultwrite \
-	user/faultwritekernel
+	user/faultwritekernel \
+	user/aslr \
+	user/vmatest \
+	user/mapunmap \
+	user/vmaspace
 
 KERN_OBJFILES := $(patsubst %.c, $(OBJDIR)/%.o, $(KERN_SRCFILES))
 KERN_OBJFILES := $(patsubst %.S, $(OBJDIR)/%.o, $(KERN_OBJFILES))
