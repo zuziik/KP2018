@@ -838,6 +838,40 @@ void tlb_invalidate(struct page_table *pml4, void *va)
     flush_page(va);
 }
 
+/*
+ * Reserve size bytes in the MMIO region and map [pa,pa+size) at this
+ * location.  Return the base of the reserved region.  size does *not*
+ * have to be multiple of PAGE_SIZE.
+ */
+void *mmio_map_region(physaddr_t pa, size_t size)
+{
+    /*
+     * Where to start the next region.  Initially, this is the
+     * beginning of the MMIO region.  Because this is static, its
+     * value will be preserved between calls to mmio_map_region
+     * (just like nextfree in boot_alloc).
+     */
+    static uintptr_t base = MMIO_BASE;
+
+    /*
+     * Reserve size bytes of virtual memory starting at base and map physical
+     * pages [pa,pa+size) to virtual addresses [base,base+size).  Since this is
+     * device memory and not regular DRAM, you'll have to tell the CPU that it
+     * isn't safe to cache access to this memory.  Luckily, the page tables
+     * provide bits for this purpose; simply create the mapping with
+     * PAGE_NO_CACHE | PAGE_WRITE_THROUGH (cache disable and write-through) in
+     * addition to PAGE_WRITE | PAGE_NO_EXEC.
+     *
+     * Be sure to round size up to a multiple of PAGE_SIZE and to handle if
+     * this reservation would overflow MMIO_LIM (it's okay to simply panic if
+     * this happens).
+     *
+     * Hint: the staff solution uses boot_map_region().
+     */
+    panic("mmio_map_region() not implemented");
+}
+
+
 static uintptr_t user_mem_check_addr;
 
 /*
@@ -1151,6 +1185,9 @@ static void check_kern_pml4(void)
         case PML4_INDEX(KSTACK_TOP-1):
         case PML4_INDEX(USER_PAGES):
         case PML4_INDEX(USER_ENVS):
+        case PML4_INDEX(MMIO_BASE):
+            assert(pml4->entries[i] & PAGE_PRESENT);
+            break;
         case PML4_INDEX(USER_VMAS):
             assert(pml4->entries[i] & PAGE_PRESENT);
             break;
@@ -1212,7 +1249,7 @@ static void check_page(void)
     struct page_info *fl;
     void *va;
     size_t i, j;
-    //extern pde_t entry_pgdir[];
+    uintptr_t mm1, mm2;
 
     /* should be able to allocate pages */
     for (i = 0; i < 5; ++i) {
@@ -1411,6 +1448,37 @@ static void check_page(void)
     /* free the pages we took */
     for (i = 0; i < 5; ++i)
         page_free(pages[i]);
+
+    /* test mmio_map_region */
+    mm1 = (uintptr_t) mmio_map_region(0, 4097);
+    mm2 = (uintptr_t) mmio_map_region(0, 4096);
+
+    /* check that they're in the right region */
+    assert(mm1 >= MMIO_BASE && mm1 + 8096 < MMIO_LIM);
+    assert(mm2 >= MMIO_BASE && mm2 + 8096 < MMIO_LIM);
+
+    /* check that they're page-aligned */
+    assert(mm1 % PAGE_SIZE == 0 && mm2 % PAGE_SIZE == 0);
+
+    /* check that they don't overlap */
+    assert(mm1 + 8096 <= mm2);
+
+    /* check page mappings */
+    assert(check_va2pa(kern_pml4, mm1) == 0);
+    assert(check_va2pa(kern_pml4, mm1+PAGE_SIZE) == PAGE_SIZE);
+    assert(check_va2pa(kern_pml4, mm2) == 0);
+    assert(check_va2pa(kern_pml4, mm2+PAGE_SIZE) == ~0);
+
+    /* check permissions */
+    assert((*page_walk(kern_pml4, (void*) mm1, 0) &
+        (PAGE_WRITE | PAGE_WRITE_THROUGH | PAGE_NO_CACHE)) ==
+        (PAGE_WRITE | PAGE_WRITE_THROUGH | PAGE_NO_CACHE));
+    assert(!(*page_walk(kern_pml4, (void*) mm1, 0) & PAGE_USER));
+
+    /* clear the mappings */
+    *page_walk(kern_pml4, (void*) mm1, 0) = 0;
+    *page_walk(kern_pml4, (void*) mm1 + PAGE_SIZE, 0) = 0;
+    *page_walk(kern_pml4, (void*) mm2, 0) = 0;
 
     cprintf("check_page() succeeded!\n");
 }

@@ -3,6 +3,7 @@
 #include <kern/idt.h>
 #include <kern/gdt.h>
 #include <kern/monitor.h>
+#include <kern/picirq.h>
 #include <kern/pmap.h>
 #include <kern/syscall.h>
 
@@ -32,6 +33,10 @@ void kmain(struct boot_info *boot_info)
     idt_init();
     syscall_init();
     env_init();
+
+    /* Lab 5 initialization functions */
+    lapic_init();
+    pic_init();
 
 #if defined(TEST)
     /* Don't touch -- used by grading script! */

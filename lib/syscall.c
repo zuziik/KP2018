@@ -64,3 +64,18 @@ int sys_vma_destroy(void *va, size_t size)
     /* LAB 4: Your code here */
     return syscall(SYS_vma_destroy, 1, (unsigned long) va, size, 0, 0, 0);
 }
+
+void sys_yield(void)
+{
+    syscall(SYS_yield, 0, 0, 0, 0, 0, 0);
+}
+
+int sys_wait(envid_t envid)
+{
+    return syscall(SYS_wait, 0, envid, 0, 0, 0, 0);
+}
+
+envid_t sys_fork(void)
+{
+    return syscall(SYS_fork, 0, 0, 0, 0, 0, 0);
+}

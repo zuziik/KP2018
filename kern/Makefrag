@@ -30,6 +30,11 @@ KERN_SRCFILES := \
 	lib/string.c \
 	kern/vma.c
 
+# Source files for LAB 5.
+KERN_SRCFILES += \
+	kern/lapic.c \
+	kern/sched.c
+
 # Only build files if they exist.
 KERN_SRCFILES := $(wildcard $(KERN_SRCFILES))
 
@@ -52,6 +57,14 @@ KERN_BINFILES := \
 	user/vmatest \
 	user/mapunmap \
 	user/vmaspace
+
+# Binary files for LAB 5.
+KERN_BINFILES += \
+	user/cowforktest \
+	user/forktree \
+	user/idle \
+	user/spin \
+	user/yield
 
 KERN_OBJFILES := $(patsubst %.c, $(OBJDIR)/%.o, $(KERN_SRCFILES))
 KERN_OBJFILES := $(patsubst %.S, $(OBJDIR)/%.o, $(KERN_OBJFILES))

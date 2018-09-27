@@ -10,6 +10,7 @@
 #include <kern/cpu.h>
 #include <kern/env.h>
 #include <kern/pmap.h>
+#include <kern/sched.h>
 #include <kern/syscall.h>
 #include <kern/console.h>
 
@@ -187,6 +188,27 @@ static int sys_vma_destroy(void *va, size_t size)
     // Unmap all pages
     vma_unmap(va_start, size_rounded, curenv);
     return 0;
+}
+
+/*
+ * Deschedule current environment and pick a different one to run.
+ */
+static void sys_yield(void)
+{
+    sched_yield();
+}
+
+static int sys_wait(envid_t envid)
+{
+    /* LAB 5: your code here. */
+    return -1;
+}
+
+static int sys_fork(void)
+{
+    /* fork() that follows COW semantics */
+    /* LAB 5: your code here. */
+    return -1;
 }
 
 /* Dispatches to the correct kernel function, passing the arguments. */

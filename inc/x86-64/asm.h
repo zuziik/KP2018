@@ -24,6 +24,8 @@
 #define FLAGS_ID      (1 << 21)
 
 #define MSR_APIC_BASE      0x0000001b
+#define MSR_APIC_BSP       (1 << 8)
+#define MSR_APIC_ENABLE    (1 << 11)
 
 #define MSR_EFER           0xc0000080
 #define MSR_STAR           0xc0000081

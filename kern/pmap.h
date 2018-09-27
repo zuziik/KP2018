@@ -77,6 +77,8 @@ void page_decref(struct page_info *pp);
 
 void tlb_invalidate(struct page_table *pml4, void *va);
 
+void *mmio_map_region(physaddr_t pa, size_t size);
+
 static inline physaddr_t page2pa(struct page_info *pp)
 {
     return (pp - pages) << PAGE_TABLE_SHIFT;

@@ -8,6 +8,7 @@
 #include <kern/env.h>
 #include <kern/idt.h>
 #include <kern/monitor.h>
+#include <kern/sched.h>
 #include <kern/syscall.h>
 
 #include <kern/pmap.h>
@@ -54,7 +55,9 @@ static const char *int_names[256] = {
     [INT_ALIGNMENT] = "Alignment Check (#AC)",
     [INT_MCE] = "Machine Check (#MC)",
     [INT_SIMD] = "SIMD Floating-Point (#XF)",
-    [INT_SYSCALL] = "System Call",
+    [INT_SECURITY] = "Security (#SX)",
+    [IRQ_OFFSET...IRQ_OFFSET+16] = "Hardware interrupt",
+    [INT_SYSCALL] = "System call",
 };
 
 static struct idt_entry entries[256];
@@ -169,6 +172,18 @@ void int_dispatch(struct int_frame *frame)
 {
     /* Handle processor exceptions. */
     /* LAB 3: your code here. */
+    switch (frame->int_no) {
+    case IRQ_TIMER:
+        /* Handle clock interrupts. Don't forget to acknowledge the interrupt
+         * using lapic_eoi() before calling the scheduler!
+         */
+        break;
+    case IRQ_SPURIOUS:
+        cprintf("Spurious interrupt on IRQ #7.\n");
+        print_int_frame(frame);
+        return;
+    default: break;
+    }
 
     cprintf("Interrupt: %s, %d\n", get_int_name(frame->int_no), frame->int_no);
 
@@ -219,6 +234,13 @@ void int_handler(struct int_frame *frame)
         /* Interrupt from user mode. */
         assert(curenv);
 
+        /* Garbage collect if current enviroment is a zombie. */
+        if (curenv->env_status == ENV_DYING) {
+            env_free(curenv);
+            curenv = NULL;
+            sched_yield();
+        }
+
         /* Copy interrupt frame (which is currently on the stack) into
          * 'curenv->env_frame', so that running the environment will restart at
          * the point of interrupt. */
@@ -231,9 +253,12 @@ void int_handler(struct int_frame *frame)
     /* Dispatch based on the type of interrupt that occurred. */
     int_dispatch(frame);
 
-    /* Return to the current environment, which should be running. */
-    assert(curenv && curenv->env_status == ENV_RUNNING);
-    env_run(curenv);
+    /* If we made it to this point, then no other environment was scheduled, so
+     * we should return to the current environment if doing so makes sense. */
+    if (curenv && curenv->env_status == ENV_RUNNING)
+        env_run(curenv);
+    else
+        sched_yield();
 }
 
 void page_fault_handler(struct int_frame *frame)

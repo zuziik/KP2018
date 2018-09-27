@@ -13,6 +13,7 @@
 #include <kern/idt.h>
 #include <kern/pmap.h>
 #include <kern/monitor.h>
+#include <kern/sched.h>
 #include <kern/syscall.h>
 
 #include <kern/vma.h>
@@ -247,6 +248,9 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     e->env_frame.rsp = USTACK_TOP;
     e->env_frame.cs = GDT_UCODE | 3;
     /* You will set e->env_frame.rip later. */
+
+    /* Enable interrupts while in user mode.
+     * LAB 5: your code here. */
 
     /* Commit the allocation */
     env_free_list = e->env_link;
@@ -505,11 +509,20 @@ void env_free(struct env *e)
  */
 void env_destroy(struct env *e)
 {
+    /* If e is currently running on other CPUs, we change its state to
+     * ENV_DYING. A zombie environment will be freed the next time
+     * it traps to the kernel. */
+    if (e->env_status == ENV_RUNNING && curenv != e) {
+        e->env_status = ENV_DYING;
+        return;
+    }
+
     env_free(e);
 
-    cprintf("Destroyed the only environment - nothing more to do!\n");
-    while (1)
-        monitor(NULL);
+    if (curenv == e) {
+        curenv = NULL;
+        sched_yield();
+    }
 }
 
 /*

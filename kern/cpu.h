@@ -32,4 +32,9 @@ struct cpuinfo {
 
 extern struct cpuinfo *thiscpu;
 
+void lapic_init(void);
+void lapic_startap(uint8_t apicid, uint32_t addr);
+void lapic_eoi(void);
+void lapic_ipi(int vector);
+
 #endif /* !defined(__ASSEMBLER__) */
