@@ -204,6 +204,13 @@ static int sys_wait(envid_t envid)
     return -1;
 }
 
+/* MATTHIJS
+ * - get a new free env from env list
+ * - copy the current env values over to new env
+ * - fix parent id / return values for both envs
+ *
+ * - something with cow semantics
+ */
 static int sys_fork(void)
 {
     /* fork() that follows COW semantics */
@@ -228,6 +235,10 @@ int64_t syscall(uint64_t syscallno, uint64_t a1, uint64_t a2, uint64_t a3,
         case SYS_env_destroy: return sys_env_destroy((envid_t) a1);
         case SYS_vma_create: return (uintptr_t) sys_vma_create((size_t) a1, (int) a2, (int) a3);
         case SYS_vma_destroy: return sys_vma_destroy((void *) a1, (size_t) a2);
+        // MATTHIJS: lab 5
+        case SYS_yield: sys_yield();
+        case SYS_wait: return sys_wait((envid_t) a1);
+        case SYS_fork: return sys_fork();
         default: return -E_NO_SYS;
     }
 }

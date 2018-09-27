@@ -843,15 +843,21 @@ void tlb_invalidate(struct page_table *pml4, void *va)
  * location.  Return the base of the reserved region.  size does *not*
  * have to be multiple of PAGE_SIZE.
  */
+// MATTHIJS
 void *mmio_map_region(physaddr_t pa, size_t size)
 {
+    uintptr_t perm;
     /*
      * Where to start the next region.  Initially, this is the
      * beginning of the MMIO region.  Because this is static, its
      * value will be preserved between calls to mmio_map_region
      * (just like nextfree in boot_alloc).
      */
-    static uintptr_t base = MMIO_BASE;
+    // static uintptr_t base = MMIO_BASE;
+    static uintptr_t base;
+    if (!base) {
+        base = MMIO_BASE;
+    }
 
     /*
      * Reserve size bytes of virtual memory starting at base and map physical
@@ -868,9 +874,18 @@ void *mmio_map_region(physaddr_t pa, size_t size)
      *
      * Hint: the staff solution uses boot_map_region().
      */
-    panic("mmio_map_region() not implemented");
-}
 
+    size = ROUNDUP(size, PAGE_SIZE);
+    if (base + size > MMIO_LIM) {
+        panic("[MMIO_MAP_REGION] Out of memory!");
+    }
+
+    perm = PAGE_WRITE | PAGE_NO_EXEC | PAGE_NO_CACHE | PAGE_WRITE_THROUGH;
+    boot_map_region(kern_pml4, base, size, pa, perm);
+
+    base += size;
+    return (void *) base - size;
+}
 
 static uintptr_t user_mem_check_addr;
 

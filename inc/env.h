@@ -66,7 +66,7 @@ struct env {
  * are filled-in from the ELF binary.
  */
 enum {
-    VMA_UNUSED,         // MATTHIJS: when to used unused?
+    VMA_UNUSED,
     VMA_ANON,
     VMA_BINARY,
 };
