@@ -36,6 +36,13 @@ extern void isr18(void);
 extern void isr19(void);
 extern void isr128(void);
 
+extern void isr32(void);
+extern void isr33(void);
+extern void isr36(void);
+extern void isr39(void);
+extern void isr46(void);
+extern void isr51(void);
+
 static const char *int_names[256] = {
     [INT_DIVIDE] = "Divide-by-Zero Error Exception (#DE)",
     [INT_DEBUG] = "Debug (#DB)",
@@ -55,7 +62,6 @@ static const char *int_names[256] = {
     [INT_ALIGNMENT] = "Alignment Check (#AC)",
     [INT_MCE] = "Machine Check (#MC)",
     [INT_SIMD] = "SIMD Floating-Point (#XF)",
-    [INT_SECURITY] = "Security (#SX)",
     [IRQ_OFFSET...IRQ_OFFSET+16] = "Hardware interrupt",
     [INT_SYSCALL] = "System call",
 };
@@ -159,6 +165,13 @@ void idt_init(void)
 
     set_idt_entry(&entries[INT_SYSCALL], isr128, IDT_PRESENT | IDT_PRIVL(3) | IDT_INT_GATE32, GDT_KCODE);
 
+    set_idt_entry(&entries[IRQ_TIMER], isr32, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
+    set_idt_entry(&entries[IRQ_KBD], isr33, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
+    set_idt_entry(&entries[IRQ_SERIAL], isr36, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
+    set_idt_entry(&entries[IRQ_SPURIOUS], isr39, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
+    set_idt_entry(&entries[IRQ_IDE], isr46, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
+    set_idt_entry(&entries[IRQ_ERROR], isr51, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
+
     idt_init_percpu();
 }
 
@@ -177,6 +190,8 @@ void int_dispatch(struct int_frame *frame)
         /* Handle clock interrupts. Don't forget to acknowledge the interrupt
          * using lapic_eoi() before calling the scheduler!
          */
+        lapic_eoi();
+        sched_yield();
         break;
     case IRQ_SPURIOUS:
         cprintf("Spurious interrupt on IRQ #7.\n");
@@ -222,11 +237,20 @@ void int_handler(struct int_frame *frame)
     cprintf("Interrupt: %s, %d\n", get_int_name(frame->int_no), frame->int_no);
     asm volatile("cld" ::: "cc");
 
+
     /* Check that interrupts are disabled.
      * If this assertion fails, DO NOT be tempted to fix it by inserting a "cli"
      * in the interrupt path.
      */
+    // MATTHIJS: see env.c
+    cprintf("%d\n", read_rflags());
+    cprintf("FLAGS_IF must be 0!\n");
+    cprintf("FLAGS_IF = %d\n", read_rflags() & FLAGS_IF);
+
+    // assertion crashes if false, so 0, so if read_rflags() & FLAGS_IF == 1
+    // assertion crashes if interrupts are enabled!
     assert(!(read_rflags() & FLAGS_IF));
+
 
     cprintf("Incoming INT frame at %p\n", frame);
 

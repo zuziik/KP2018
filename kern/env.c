@@ -19,7 +19,7 @@
 #include <kern/vma.h>
 
 struct env *envs = NULL;            /* All environments */
-static struct env *env_free_list;   /* Free environment list */
+struct env *env_free_list;          /* Free environment list */                 // Matthijs: removed static, added to header
                                     /* (linked by env->env_link) */
 
 #define ENVGENSHIFT 12      /* >= LOGNENV */
@@ -251,6 +251,10 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
 
     /* Enable interrupts while in user mode.
      * LAB 5: your code here. */
+    // FLAGS_IF: if 0, interrupts are disables, if 1, interrupts are enabled
+    if (!(read_rflags() & FLAGS_IF)) {
+        e->env_frame.rflags |= FLAGS_IF;
+    }
 
     /* Commit the allocation */
     env_free_list = e->env_link;
@@ -441,8 +445,8 @@ void env_create(uint8_t *binary, enum env_type type)
     else {
         panic("Error in env_alloc");
     }
+    e->env_status = ENV_RUNNABLE;
     cprintf("[ENV CREATE] end\n");
-
 }
 
 void env_free_page_tables(struct page_table *page_table, size_t depth)

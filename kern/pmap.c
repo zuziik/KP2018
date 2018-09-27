@@ -847,6 +847,7 @@ void tlb_invalidate(struct page_table *pml4, void *va)
 void *mmio_map_region(physaddr_t pa, size_t size)
 {
     uintptr_t perm;
+    cprintf("[MMIO_MAP_REGION] Start\n");
     /*
      * Where to start the next region.  Initially, this is the
      * beginning of the MMIO region.  Because this is static, its

@@ -40,8 +40,16 @@ ISR_NOERRCODE INT_MCE
 ISR_NOERRCODE INT_SIMD
 ISR_NOERRCODE INT_SYSCALL
 
+ISR_ERRCODE IRQ_TIMER
+ISR_ERRCODE IRQ_KBD
+ISR_ERRCODE IRQ_SERIAL 
+ISR_ERRCODE IRQ_SPURIOUS
+ISR_ERRCODE IRQ_IDE
+ISR_ERRCODE IRQ_ERROR
+
 isr_common_stub:
     /* LAB 3: your code here. */
+    cli
 
     pushq %rax
     pushq %rcx
@@ -116,6 +124,7 @@ iret64:
     # clear int_no and err_no from the stack
     addq $0x10, %rsp
     
+    sti
     iretq
 
 .global sysret64

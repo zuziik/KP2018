@@ -110,8 +110,7 @@ def test_hello():
             'i am environment 00001000',
             '.00001000. exiting gracefully',
             '.00001000. free env 00001000',
-            # 'Destroyed the only environment - nothing more to do!')
-            'No runnable environments in the system!')
+            'Destroyed the only environment - nothing more to do!')
 
 @test(5)
 def test_buggyhello():
