@@ -64,6 +64,9 @@ struct env {
     // Keep track of the timeslice                      MATTHIJS
     uintptr_t timeslice;
     uintptr_t prev_time;
+
+    // For which env does it have to wait. -1 means no waiting
+    envid_t pause;
 };
 
 /* Anonymous VMAs are zero-initialized whereas binary VMAs

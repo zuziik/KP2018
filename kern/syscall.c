@@ -198,10 +198,26 @@ static void sys_yield(void)
     sched_yield();
 }
 
+/* MATTHIJS
+ * Pause curenv and run the env with envid
+ * Continue executing curenv only if env is finished
+ */
 static int sys_wait(envid_t envid)
 {
     /* LAB 5: your code here. */
-    return -1;
+    struct env *new_env;
+
+    // Get index in envs list, error if no env with such id exists
+    int new_env_index = get_env_index(envid);
+    if (new_env_index < 0) {
+        return -1;
+    }
+
+    new_env = &envs[new_env_index];
+    curenv->pause = envid;
+
+    sched_yield();                  // MATTHIJS: does this ever return?
+    return 0;
 }
 
 /* MATTHIJS

@@ -228,6 +228,7 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
 
     e->timeslice = 100000000;                      // MATTHIJS LAB 5
     e->prev_time = 0;
+    e->pause = -1;
 
     /*
      * Clear out all the saved register state, to prevent the register values of

@@ -11,15 +11,25 @@
 void sched_halt(void);
 
 // Return the index of env in the envs list
-int get_env_index(struct env *env) {
+int get_env_index(envid_t env_id) {
     int i;
     for (i = 0; i < NENV; i++) {
-        if ((&envs[i])->env_id == env->env_id) {
+        if ((&envs[i])->env_id == env_id) {
             return i;
         }
     }
 
-    panic("Env not in envs list\n");
+    return -1;
+}
+
+// Reset the pause variable for each env which was waiting on the env with env_id
+void reset_pause(envid_t env_id) {
+    int i;
+    for (i = 0; i++; i < NENV) {
+        if ((&envs[i])->pause == env_id) {
+            (&envs[i])->pause = -1;
+        }
+    }
 }
 
 /*
@@ -34,17 +44,20 @@ void sched_yield(void)
 
     // Just destroyed the previous current env
     if (curenv == NULL) {
-        curenv_i = get_env_index(env_free_list);        // MATTHIJS: is this correct, made the free list non-static to access it
+        curenv_i = get_env_index(env_free_list->env_id);        // MATTHIJS: is this correct, made the free list non-static to access it
+
+        // Curenv just finished so reset the envs which were paused
+        reset_pause((&envs[curenv_i])->env_id);
     } else {
         // curenv just ran succesfully
-        curenv_i = get_env_index(curenv);
+        curenv_i = get_env_index(curenv->env_id);
 
         // Update timeslice of curenv
         curenv->timeslice -= (time - curenv->prev_time);
         curenv->prev_time = time;
 
         // If env is still running and timeslice is not 0, continue executing
-        if ((int64_t) curenv->timeslice > 0 && curenv->env_status == ENV_RUNNING) {
+        if ((int64_t) curenv->timeslice > 0 && curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
             cprintf("[AAA] current - timeslice = %d\n", curenv->timeslice);
             env_run(curenv);
             sched_halt();
@@ -81,7 +94,7 @@ void sched_yield(void)
     // Search for the first runnable env after curenv
     while (i != curenv_i) {
         // Found a different runnable env
-        if (&envs[i] != NULL && (&envs[i])->env_status == ENV_RUNNABLE) {
+        if (&envs[i] != NULL && (&envs[i])->env_status == ENV_RUNNABLE && (&envs[i])->pause < 0) {
             env = &envs[i];
             break;
         }
@@ -95,7 +108,7 @@ void sched_yield(void)
     }
 
     // No runnable envs found, use current if running or runnable
-    if (i == curenv_i && curenv != NULL && 
+    if (i == curenv_i && curenv != NULL && curenv->pause < 0 &&
         (curenv->env_status == ENV_RUNNING || curenv->env_status == ENV_RUNNABLE)) {
         env = curenv;
     }
