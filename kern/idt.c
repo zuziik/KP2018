@@ -188,7 +188,7 @@ void int_dispatch(struct int_frame *frame)
     switch (frame->int_no) {
     case IRQ_TIMER:
         /* Handle clock interrupts. Don't forget to acknowledge the interrupt
-         * using lapic_eoi() before calling the scheduler!
+         * using lapic_eoi() before calling the scheduler! lab 5
          */
         lapic_eoi();
         sched_yield();
@@ -242,7 +242,7 @@ void int_handler(struct int_frame *frame)
      * in the interrupt path.
      */
     // Interrupts should be disabled since we dont want interrupts in interrupts
-    // So FLAGS_IF should be set to 0 here
+    // So FLAGS_IF should be set to 0 here. lab 5 default code
     assert(!(read_rflags() & FLAGS_IF));
 
     cprintf("Incoming INT frame at %p\n", frame);

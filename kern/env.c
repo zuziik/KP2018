@@ -226,6 +226,9 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     e->env_status = ENV_RUNNABLE;
     e->env_runs = 0;
 
+    e->timeslice = 100000000;                      // MATTHIJS LAB 5
+    e->prev_time = 0;
+
     /*
      * Clear out all the saved register state, to prevent the register values of
      * a prior environment inhabiting this env structure from "leaking" into our
@@ -586,6 +589,11 @@ void env_run(struct env *e)
     curenv = e;
     curenv->env_status = ENV_RUNNING;
     curenv->env_runs += 1;
+
+    // First run env, is not inited correct yet                         MATTHIJS
+    if (curenv->prev_time == 0) {
+        curenv->prev_time = read_tsc();
+    }
 
     load_pml4((void *)PADDR(curenv->env_pml4));
     env_pop_frame(&curenv->env_frame);

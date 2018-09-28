@@ -60,6 +60,10 @@ struct env {
 
     // Linked list of vma's and current amount of vma's (128 max)
     struct vma *vma;
+
+    // Keep track of the timeslice                      MATTHIJS
+    uintptr_t timeslice;
+    uintptr_t prev_time;
 };
 
 /* Anonymous VMAs are zero-initialized whereas binary VMAs

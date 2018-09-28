@@ -40,6 +40,7 @@ ISR_NOERRCODE INT_MCE
 ISR_NOERRCODE INT_SIMD
 ISR_NOERRCODE INT_SYSCALL
 
+# lab 5, also see idt.c for new idt entries
 ISR_ERRCODE IRQ_TIMER
 ISR_ERRCODE IRQ_KBD
 ISR_ERRCODE IRQ_SERIAL 
@@ -49,7 +50,7 @@ ISR_ERRCODE IRQ_ERROR
 
 isr_common_stub:
     /* LAB 3: your code here. */
-    cli # clear interrupt flag
+    cli # clear interrupt flag, lab 5
 
     pushq %rax
     pushq %rcx
@@ -123,7 +124,7 @@ iret64:
     # clear int_no and err_no from the stack
     addq $0x10, %rsp
     
-    sti # set interrupt flag
+    sti # set interrupt flag, lab 5
     iretq
 
 .global sysret64
