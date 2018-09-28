@@ -49,7 +49,7 @@ ISR_ERRCODE IRQ_ERROR
 
 isr_common_stub:
     /* LAB 3: your code here. */
-    cli
+    cli # clear interrupt flag
 
     pushq %rax
     pushq %rcx
@@ -81,7 +81,6 @@ isr_common_stub:
 
     movq %rsp, %rdi
     jmp int_handler
-
 
 .global syscall64
 syscall64:
@@ -124,12 +123,10 @@ iret64:
     # clear int_no and err_no from the stack
     addq $0x10, %rsp
     
-    sti
+    sti # set interrupt flag
     iretq
 
 .global sysret64
 sysret64:
     /* LAB 3: your code here. */
-
-
     sysretq

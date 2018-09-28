@@ -237,20 +237,13 @@ void int_handler(struct int_frame *frame)
     cprintf("Interrupt: %s, %d\n", get_int_name(frame->int_no), frame->int_no);
     asm volatile("cld" ::: "cc");
 
-
     /* Check that interrupts are disabled.
      * If this assertion fails, DO NOT be tempted to fix it by inserting a "cli"
      * in the interrupt path.
      */
-    // MATTHIJS: see env.c
-    cprintf("%d\n", read_rflags());
-    cprintf("FLAGS_IF must be 0!\n");
-    cprintf("FLAGS_IF = %d\n", read_rflags() & FLAGS_IF);
-
-    // assertion crashes if false, so 0, so if read_rflags() & FLAGS_IF == 1
-    // assertion crashes if interrupts are enabled!
+    // Interrupts should be disabled since we dont want interrupts in interrupts
+    // So FLAGS_IF should be set to 0 here
     assert(!(read_rflags() & FLAGS_IF));
-
 
     cprintf("Incoming INT frame at %p\n", frame);
 
