@@ -65,11 +65,8 @@ void sched_yield(void)
         } 
     }
 
-    i = curenv_i + 1;
     // Corner case: curenv is last env so go circular
-    if (i == NENV) {
-        i = 0;
-    }
+    i = (curenv_i + 1) % NENV;
 
     /*
      * Implement simple round-robin scheduling.
@@ -100,11 +97,7 @@ void sched_yield(void)
         }
 
         // Reached the end, go circular to 0
-        if (i == NENV - 1) {
-            i = 0;
-        } else {
-            i++;
-        }
+        i = (i + 1) % NENV;
     }
 
     // No runnable envs found, use current if running or runnable

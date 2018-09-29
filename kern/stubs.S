@@ -124,7 +124,6 @@ iret64:
     # clear int_no and err_no from the stack
     addq $0x10, %rsp
     
-    sti # set interrupt flag, lab 5
     iretq
 
 .global sysret64

@@ -205,15 +205,21 @@ static void sys_yield(void)
 static int sys_wait(envid_t envid)
 {
     /* LAB 5: your code here. */
-    struct env *new_env;
 
-    // Get index in envs list, error if no env with such id exists
-    int new_env_index = get_env_index(envid);
-    if (new_env_index < 0) {
+    // ZUZANA - I think this is redundant, we never use new_env
+    // struct env *new_env;
+
+    // // Get index in envs list, error if no env with such id exists
+    // int new_env_index = get_env_index(envid);
+    // if (new_env_index < 0) {
+    //     return -1;
+    // }
+
+    // new_env = &envs[new_env_index];
+
+    if (get_env_index(envid) < 0)
         return -1;
-    }
-
-    new_env = &envs[new_env_index];
+    
     curenv->pause = envid;
 
     sched_yield();                  // MATTHIJS: does this ever return?
@@ -251,7 +257,6 @@ int64_t syscall(uint64_t syscallno, uint64_t a1, uint64_t a2, uint64_t a3,
         case SYS_env_destroy: return sys_env_destroy((envid_t) a1);
         case SYS_vma_create: return (uintptr_t) sys_vma_create((size_t) a1, (int) a2, (int) a3);
         case SYS_vma_destroy: return sys_vma_destroy((void *) a1, (size_t) a2);
-        // MATTHIJS: lab 5
         case SYS_yield: sys_yield();
         case SYS_wait: return sys_wait((envid_t) a1);
         case SYS_fork: return sys_fork();

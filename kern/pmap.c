@@ -1,34 +1,3 @@
-/*
- * ----------------------------------------------------------------------------
- * LAB 2
- * Kernel Programming 2018 @VU
- * by Matthijs Jansen and Zuzana Hromcova
- * Version from Friday, September 14th
- * ----------------------------------------------------------------------------
- * 
- * Remarks:
- * 
- * Huge pages are implemented almost the same as small pages, with the
- * exception that their descriptive entry is located in PD instead of PTE.
- * 
- * page_walk() - We walk the page table tree and return a PTE or PDE
- * (depends on whether we query a small or a huge page).
- * 
- * page_insert() - We create a mapping for the given virtual page (remove
- * it first if it was already mapped). We also remove the page from the
- * free list if it was there (to avoid randomly allocating it later).
- * 
- * page_remove() - We clear the PTE/PDE, flush TLB cache and
- * decrement refcount on that page.
- * 
- * boot_map_kernel() - We exclude program segments with addresses below
- * KERNEL_VMA from the mapping.
- * 
- * NX bit - The NX is enabled using the provided function. The PAGE_WRITE | 
- * PAGE_NO_EXEC are setup when the pages are allocated.
- * 
- */
-
 /* See COPYRIGHT for copyright information. */
 
 #include <inc/error.h>

@@ -449,7 +449,6 @@ void env_create(uint8_t *binary, enum env_type type)
     else {
         panic("Error in env_alloc");
     }
-    e->env_status = ENV_RUNNABLE;
     cprintf("[ENV CREATE] end\n");
 }
 

@@ -44,6 +44,9 @@ void kmain(struct boot_info *boot_info)
 #else
     /* Touch all you want. */
     ENV_CREATE(user_divzero, ENV_TYPE_USER);
+    // ENV_CREATE(user_yield, ENV_TYPE_USER);
+    // ENV_CREATE(user_yield, ENV_TYPE_USER);
+    // ENV_CREATE(user_yield, ENV_TYPE_USER);
 #endif
 
     /* We only have one user environment for now, so just run it. */
