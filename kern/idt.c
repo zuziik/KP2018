@@ -284,6 +284,7 @@ void page_fault_handler(struct int_frame *frame)
     int is_user = (frame->err_code & 4) == 4;           // User or kernel space
     int is_protection = (frame->err_code & 1) == 1;     // Protection or non-present page
     void *fault_va;
+    int is_cow;
 
     /* Read the CR2 register to find the faulting address. */
     fault_va = read_cr2();
@@ -291,8 +292,16 @@ void page_fault_handler(struct int_frame *frame)
     /* Handle kernel-mode page faults. */
     /* LAB 3: your code here. */
 
+    // Check protection violations for copy-on-write.
+    // Only destroy env if it wasnt a copy-on-write case
+    if (is_protection) {
+        is_cow = cow(frame, fault_va, fault_va_aligned);
+        if (is_cow) {
+            return;
+        }
+    }
     // Kernel mode error
-    if (!is_user) {
+    else if (!is_user) {
         // Kernel tries to read user space, load user space page
         if (fault_va_aligned < KERNEL_VMA) {
             if (page_fault_load_page((void *) fault_va_aligned)) {
@@ -302,11 +311,10 @@ void page_fault_handler(struct int_frame *frame)
             panic("Page fault in kernel mode - Kernel tries to read not mapped kernel space page\n");
         }
     }
-    /* We have already handled kernel-mode exceptions, so if we get here, the
-     * page fault has happened in user mode.
-     * Protection violations always lead to destruction of env
+    /* We have already handled kernel-mode exceptions and protection violations,
+     * so if we get here, the page fault has happened in user mode.
      */
-    else if (!is_protection) {
+    else {
         // Page is not loaded, search in vma and map it in page tables
         if (page_fault_load_page((void *) fault_va_aligned)) {
             return;
@@ -318,6 +326,31 @@ void page_fault_handler(struct int_frame *frame)
         curenv->env_id, fault_va, frame->rip);
     print_int_frame(frame);
     env_destroy(curenv);
+}
+
+// Protection violation in page fault: check if cow must be used
+int cow(struct int_frame *frame, void *fault_va, uintptr_t fault_va_aligned) {
+    struct vma *vma;
+    struct page_info *new_page, *old_page;
+    physaddr_t *pt_entry = NULL;
+
+    // Get vma associated with faulting virt addr
+    vma = vma_lookup(curenv, (void *)fault_va_aligned);
+
+    // A regular protection fault, no cow
+    if (vma == NULL || !(vma->perm & PAGE_WRITE)) {
+        return 0;
+    }
+
+    // Get a new physical page and copy the write protected page to new phys mem
+    new_page = page_alloc(ALLOC_ZERO);
+    old_page = page_lookup(curenv->env_pml4, (void *) fault_va_aligned, &pt_entry);
+    memcpy((void *) page2pa(new_page), (void *) page2pa(old_page), sizeof(old_page));
+
+    // Add the write permission again since there is a private copy
+    *pt_entry |= PAGE_WRITE;
+
+    return 1;
 }
 
 // Page fault has occured, load the page and map it

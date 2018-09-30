@@ -216,18 +216,116 @@ static int sys_wait(envid_t envid)
     return 0;
 }
 
-/* MATTHIJS
- * - get a new free env from env list
- * - copy the current env values over to new env
- * - fix parent id / return values for both envs
- *
- * - something with cow semantics
- */
+// Remove all PAGE_WRITE permissions from the pml4
+void enforce_cow(struct page_table *pml4) {
+    cprintf("[ENFORCE_COW] Start\n");
+    struct page_table *pdpt, *pgdir, *pt;
+    size_t s, t, u, v;
+
+    // Loop through pml4 entries
+    for (s = 0; s < PAGE_TABLE_ENTRIES; ++s) {
+        if (!(pml4->entries[s] & PAGE_PRESENT))
+            continue;
+
+        // Loop through pdp entries
+        pdpt = (void *)(KERNEL_VMA + PAGE_ADDR(pml4->entries[s]));
+        for (t = 0; t < PAGE_TABLE_ENTRIES; ++t) {
+            if (!(pdpt->entries[t] & PAGE_PRESENT))
+                continue;
+
+            // Loop through pd entries
+            pgdir = (void *)(KERNEL_VMA + PAGE_ADDR(pdpt->entries[t]));
+            for (u = 0; u < PAGE_TABLE_ENTRIES; ++u) {
+                if (!(pgdir->entries[u] & PAGE_PRESENT))
+                    continue;
+
+                // Check huge pages,
+                if (pgdir->entries[u] & PAGE_HUGE && pgdir->entries[u] & PAGE_WRITE) {
+                    pgdir->entries[u] &= PAGE_WRITE;
+                    continue;
+                }
+
+                // Loop through page table
+                pt = (void *)(KERNEL_VMA + PAGE_ADDR(pgdir->entries[u]));
+                for (v = 0; v < PAGE_TABLE_ENTRIES; ++v) {
+                    if (!(pt->entries[v] & PAGE_PRESENT))
+                        continue;
+
+                    if (pt->entries[v] & PAGE_WRITE) {
+                        pt->entries[v] &= PAGE_WRITE;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Fork: create a new env based on the parent, curenv
+// TODO:
+// - are values in new_env correct?
+// - memcpy or just new_env->... = curenv->...
+// - how to do COW
+// - what to return
 static int sys_fork(void)
 {
     /* fork() that follows COW semantics */
     /* LAB 5: your code here. */
-    return -1;
+    // return -1;
+    cprintf("[SYS_FORK] START\n");
+    struct env *new_env;
+    if (env_free_list == NULL) {
+        cprintf("[SYS_FORK] END CRASH\n");
+        return -1;
+    }
+
+    // Get a new, free environment
+    new_env = env_free_list;
+    env_free_list = new_env->env_link;
+    new_env->env_link = NULL;
+
+    // Set new values, independent from parent      MATTHIJS: dont reset this?
+    new_env->env_status = ENV_RUNNABLE;
+    new_env->env_runs = 0;
+    new_env->timeslice = 100000000;
+    new_env->prev_time = 0;
+    new_env->pause = -1;
+
+    cprintf("[SYS_FORK] Before memcpy\n");
+
+    // Set new values based on parent
+    new_env->env_parent_id = curenv->env_id;
+    // new_env->vma = curenv->vma;
+    memcpy((void *) &(new_env->vma), (void *) &(curenv->vma), sizeof(curenv->vma));
+
+    cprintf("[SYS_FORK] After vma copy\n");
+
+    // Copy over the page tables
+    memcpy((void *) &(new_env->env_pml4), (void *) &(curenv->env_pml4), 
+           sizeof(curenv->env_pml4));
+
+    cprintf("[SYS_FORK] After pml4 copy\n");
+
+    // Enforce COW: remove all PAGE_WRITE permissions from leaves in pml4 of 
+    // child and parent. VMA still has those permissions
+    enforce_cow(curenv->env_pml4);
+    enforce_cow(new_env->env_pml4);
+
+    cprintf("[SYS_FORK] After enforce cow\n");
+
+    // Copy the state
+    // new_env->env_frame = curenv->env_frame
+    memcpy((void *) &(new_env->env_frame), (void *) &(curenv->env_frame), 
+           sizeof(curenv->env_frame));
+
+    // Child return
+    cprintf("[SYS_FORK] END\n");
+    if (curenv->env_id == new_env->env_id) {
+        return 0;
+    }
+    // Parent return
+    else {
+        return new_env->env_id;
+    }
 }
 
 /* Dispatches to the correct kernel function, passing the arguments. */
