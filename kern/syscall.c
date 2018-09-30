@@ -205,24 +205,14 @@ static void sys_yield(void)
 static int sys_wait(envid_t envid)
 {
     /* LAB 5: your code here. */
-
-    // ZUZANA - I think this is redundant, we never use new_env
-    // struct env *new_env;
-
-    // // Get index in envs list, error if no env with such id exists
-    // int new_env_index = get_env_index(envid);
-    // if (new_env_index < 0) {
-    //     return -1;
-    // }
-
-    // new_env = &envs[new_env_index];
-
+    // Check if envid is a valid id
     if (get_env_index(envid) < 0)
         return -1;
     
+    // Let curenv wait and reschedule immediately
     curenv->pause = envid;
-
-    sched_yield();                  // MATTHIJS: does this ever return?
+    sched_yield();
+    panic("[SYS_WAIT] sched_yield does return (remove this panic eventually)\n");
     return 0;
 }
 

@@ -458,7 +458,9 @@ void env_free_page_tables(struct page_table *page_table, size_t depth)
     physaddr_t *entry;
     size_t i, max;
 
-    max = (depth == 3) ? PML4_INDEX(KERNEL_VMA) : PAGE_TABLE_ENTRIES;
+    // Commented line was in default framework but wrong, next line is correct
+    // max = (depth == 3) ? PML4_INDEX(KERNEL_VMA) : PAGE_TABLE_ENTRIES;
+    max = (depth == 3) ? PML4_INDEX(USER_TOP) : PAGE_TABLE_ENTRIES;
 
     /* Iterate the entries in the page table to free them. */
     for (i = 0; i < max; ++i) {

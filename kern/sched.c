@@ -47,7 +47,7 @@ void sched_yield(void)
         curenv_i = get_env_index(env_free_list->env_id);        // MATTHIJS: is this correct, made the free list non-static to access it
 
         // Curenv just finished so reset the envs which were paused
-        reset_pause((&envs[curenv_i])->env_id);
+        reset_pause(env_free_list->env_id);
     } else {
         // curenv just ran succesfully
         curenv_i = get_env_index(curenv->env_id);
@@ -57,7 +57,8 @@ void sched_yield(void)
         curenv->prev_time = time;
 
         // If env is still running and timeslice is not 0, continue executing
-        if ((int64_t) curenv->timeslice > 0 && curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
+        if ((int64_t) curenv->timeslice > 0 && 
+            curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
             cprintf("[AAA] current - timeslice = %d\n", curenv->timeslice);
             env_run(curenv);
             sched_halt();
@@ -103,6 +104,7 @@ void sched_yield(void)
     // No runnable envs found, use current if running or runnable
     if (i == curenv_i && curenv != NULL && curenv->pause < 0 &&
         (curenv->env_status == ENV_RUNNING || curenv->env_status == ENV_RUNNABLE)) {
+        cprintf("[AAA] use curenv\n");
         env = curenv;
     }
 
@@ -112,7 +114,7 @@ void sched_yield(void)
         env->timeslice = 100000000;
         env->prev_time = time;
         env_run(env);
-    } 
+    }
 
     /* sched_halt() never returns */
     sched_halt();
