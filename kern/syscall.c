@@ -260,6 +260,114 @@ void enforce_cow(struct page_table *pml4) {
     }
 }
 
+void copy_vma(struct env *old, struct env *new) {
+    int i;
+
+    struct vma* vma_old = old->vma;
+    struct vma* vma_new = new->vma;
+
+    struct vma* vma_old_next;
+    struct vma* vma_old_prev;
+    struct vma* vma_new_next;
+    struct vma* vma_new_prev;
+
+    for (i = 0; i < 128; i++) {
+        vma_old_next = vma_old->next;
+        vma_old_prev = vma_old->prev;
+
+        vma_new_next = vma_new->next;
+        vma_new_prev = vma_new->prev;
+
+        memcpy((void *) &(vma_new), (void *) &(vma_old), sizeof(struct vma));
+        vma_new->next = vma_new_next;
+        vma_new->prev = vma_new_prev;
+    }    
+}
+
+int copy_pml4(struct env *old, struct env *new) {
+    cprintf("[COPY_PML4] Start\n");
+
+    struct page_table *pdpt_new, *pdpt_old, *pgdir_new, *pgdir_old, *pt_new, *pt_old;
+    size_t s, t, u, v;
+
+    struct page_info *p;
+    if (! (p = page_alloc(ALLOC_ZERO))) {
+        cprintf("[COPY_PML4] out of memory\n");
+        return -1;
+    }
+    p->pp_ref++;
+
+    new->env_pml4 = (struct page_table *) p;
+
+    struct page_table *pml4_new = new->env_pml4;
+    struct page_table *pml4_old = old->env_pml4;
+
+    // Loop through pml4 entries
+    for (s = 0; s < PAGE_TABLE_ENTRIES; ++s) {
+        if (!(pml4_old->entries[s] & PAGE_PRESENT))
+            continue;
+
+        // We have pdp entry in pml4 - we must allocate one in new env, too
+        // TODO - make this code a function, or use entry_in_table instead
+        if (! (p = page_alloc(ALLOC_ZERO))) {
+            cprintf("[COPY_PML4] out of memory\n");
+            return -1;
+        }
+        p->pp_ref++;
+        pml4_new->entries[s] = PADDR((struct page_table *)KADDR(page2pa(p))) | PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
+
+        // Loop through pdp entries
+        pdpt_old = (void *)(KERNEL_VMA + PAGE_ADDR(pml4_old->entries[s]));
+        pdpt_new = (void *)(KERNEL_VMA + PAGE_ADDR(pml4_new->entries[s]));
+
+        for (t = 0; t < PAGE_TABLE_ENTRIES; ++t) {
+            if (!(pdpt_old->entries[t] & PAGE_PRESENT))
+                continue;
+
+            if (! (p = page_alloc(ALLOC_ZERO))) {
+                cprintf("[COPY_PML4] out of memory\n");
+                return -1;
+            }
+            p->pp_ref++;
+            pdpt_new->entries[t] = PADDR((struct page_table *)KADDR(page2pa(p))) | PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
+
+            // Loop through pd entries
+            pgdir_old = (void *)(KERNEL_VMA + PAGE_ADDR(pdpt_old->entries[t]));
+            pgdir_new = (void *)(KERNEL_VMA + PAGE_ADDR(pdpt_new->entries[t]));
+
+            for (u = 0; u < PAGE_TABLE_ENTRIES; ++u) {
+                if (!(pgdir_old->entries[u] & PAGE_PRESENT))
+                    continue;
+
+                // Check huge pages,
+                if (pgdir_old->entries[u] & PAGE_HUGE) {
+                    memcpy((void *) &(pgdir_new->entries[u]), (void *) &(pgdir_old->entries[u]), sizeof(physaddr_t));
+                    continue;
+                }
+
+                if (! (p = page_alloc(ALLOC_ZERO))) {
+                    cprintf("[COPY_PML4] out of memory\n");
+                    return -1;
+                }
+                p->pp_ref++;
+                pgdir_new->entries[u] = PADDR((struct page_table *)KADDR(page2pa(p))) | PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
+
+                // Loop through page table
+                pt_old = (void *)(KERNEL_VMA + PAGE_ADDR(pgdir_old->entries[u]));
+                pt_new = (void *)(KERNEL_VMA + PAGE_ADDR(pgdir_new->entries[u]));
+
+                for (v = 0; v < PAGE_TABLE_ENTRIES; ++v) {
+                    if (!(pt_old->entries[v] & PAGE_PRESENT))
+                        continue;
+
+                    memcpy((void *) &(pt_new->entries[v]), (void *) &(pt_old->entries[v]), sizeof(physaddr_t));
+                }
+            }
+        }
+    }
+    return 0;
+}
+
 // Fork: create a new env based on the parent, curenv
 // TODO:
 // - are values in new_env correct?
@@ -279,31 +387,28 @@ static int sys_fork(void)
     }
 
     // Get a new, free environment
-    new_env = env_free_list;
-    env_free_list = new_env->env_link;
-    new_env->env_link = NULL;
-
-    // Set new values, independent from parent      MATTHIJS: dont reset this?
-    new_env->env_status = ENV_RUNNABLE;
-    new_env->env_runs = 0;
-    new_env->timeslice = 100000000;
-    new_env->prev_time = 0;
-    new_env->pause = -1;
+    if (env_alloc(&new_env, curenv->env_id) < 0) {
+        cprintf("[SYS_FORK] no free environments\n");
+        return -1;
+    }
 
     cprintf("[SYS_FORK] Before memcpy\n");
 
-    // Set new values based on parent
-    new_env->env_parent_id = curenv->env_id;
-    // new_env->vma = curenv->vma;
-    memcpy((void *) &(new_env->vma), (void *) &(curenv->vma), sizeof(curenv->vma));
+    // Copy data from VMA
+    copy_vma(curenv, new_env);
+
+    cprintf("[SYS_FORK] cur vma: %llx\n", curenv->vma);
+    cprintf("[SYS_FORK] new vma: %llx\n", new_env->vma);
 
     cprintf("[SYS_FORK] After vma copy\n");
 
     // Copy over the page tables
-    memcpy((void *) &(new_env->env_pml4), (void *) &(curenv->env_pml4), 
-           sizeof(curenv->env_pml4));
+    copy_pml4(curenv, new_env);
 
     cprintf("[SYS_FORK] After pml4 copy\n");
+
+    cprintf("[SYS_FORK] cur pml4: %llx\n", curenv->env_pml4);
+    cprintf("[SYS_FORK] new pml4: %llx\n", new_env->env_pml4);
 
     // Enforce COW: remove all PAGE_WRITE permissions from leaves in pml4 of 
     // child and parent. VMA still has those permissions
