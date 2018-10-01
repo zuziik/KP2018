@@ -62,8 +62,8 @@ struct env {
     struct vma *vma;
 
     // Keep track of the timeslice                      MATTHIJS
-    uintptr_t timeslice;
-    uintptr_t prev_time;
+    int64_t timeslice;
+    int64_t prev_time;
 
     // For which env does it have to wait. -1 means no waiting
     envid_t pause;

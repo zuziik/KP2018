@@ -40,7 +40,7 @@ void sched_yield(void)
     cprintf("[SCHED_YIELD] start\n\n");
     struct env *env = NULL;
     int curenv_i, i;
-    uintptr_t time = read_tsc();
+    int64_t time = read_tsc();
 
     // Just destroyed the previous current env
     if (curenv == NULL) {
@@ -57,7 +57,8 @@ void sched_yield(void)
         curenv->prev_time = time;
 
         // If env is still running and timeslice is not 0, continue executing
-        if ((int64_t) curenv->timeslice > 0 && 
+        cprintf("current-timeslice > 0 = %d\n", curenv->timeslice > 0);
+        if (curenv->timeslice > 0 && 
             curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
             cprintf("[AAA] current - timeslice = %d\n", curenv->timeslice);
             env_run(curenv);
@@ -110,7 +111,7 @@ void sched_yield(void)
 
     // Run the env
     if (env != NULL) {
-        cprintf("[AAA] new\n");
+        cprintf("[AAA] new - %d\n", env->env_id);
         env->timeslice = 100000000;
         env->prev_time = time;
         env_run(env);

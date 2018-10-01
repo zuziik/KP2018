@@ -11,5 +11,16 @@ envid_t fork(void)
     // Should also update things in " local" env info
     // Like envs[] or thisenv (which is curenv in userspace)
     cprintf("[CCC]\n");
-	return sys_fork();
+    int id = sys_fork();
+
+    // child
+    if (id == 0) {
+    	cprintf("[CCC] child: %d\n", thisenv->env_id);
+    }
+    // parent
+    else {
+    	cprintf("[CCC] parent: %d\n", thisenv->env_id);
+    }
+
+	return id;
 }

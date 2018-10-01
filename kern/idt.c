@@ -295,8 +295,9 @@ void page_fault_handler(struct int_frame *frame)
     // Only destroy env if it wasnt a copy-on-write case
     if (is_protection) {
         cprintf("[PAGE_FAULT_HANDLER] check cow\n");
-        is_cow = cow(frame, fault_va, fault_va_aligned, (frame->err_code & 2) == 2);
-        cprintf("[PAGE_FAULT_HANDLER] is_cow = %d\n", is_cow);
+        is_cow = cow(fault_va, fault_va_aligned, (frame->err_code & 2) == 2);
+        cprintf("[PAGE_FAULT_HANDLER] is_cow = %d - is_user = %d - is_userspace = %d\n", 
+                is_cow, is_user, fault_va_aligned < KERNEL_VMA);
         if (is_cow) {
             return;
         }
@@ -330,10 +331,12 @@ void page_fault_handler(struct int_frame *frame)
 }
 
 // Protection violation in page fault: check if cow must be used
-int cow(struct int_frame *frame, void *fault_va, uintptr_t fault_va_aligned, int is_write) {
+int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
+    cprintf("COW start\n");
     struct vma *vma;
     struct page_info *new_page, *old_page;
     physaddr_t *pt_entry = NULL;
+    int perm = PAGE_WRITE | PAGE_PRESENT;
 
     // Get vma associated with faulting virt addr
     vma = vma_lookup(curenv, (void *)fault_va_aligned);
@@ -344,13 +347,36 @@ int cow(struct int_frame *frame, void *fault_va, uintptr_t fault_va_aligned, int
         return 0;
     }
 
+    cprintf("COW - cow detected\n");
+
     // Get a new physical page and copy the write protected page to new phys mem
     new_page = page_alloc(ALLOC_ZERO);
+    cprintf("1\n");
     old_page = page_lookup(curenv->env_pml4, (void *) fault_va_aligned, &pt_entry);
-    memcpy((void *) page2pa(new_page), (void *) page2pa(old_page), sizeof(old_page));
+    cprintf("2\n");
+
+    new_page = old_page;
+    // memcpy((void *) page2pa(new_page), (void *) page2pa(old_page), sizeof(old_page));
+    cprintf("3\n");
+    if (new_page->pp_ref != old_page->pp_ref) {
+        panic("AAAAAAAAAAAAAAAAA\n");
+    }
+
+    if (*pt_entry & PAGE_USER) {
+        perm |= PAGE_USER;
+    }
+    if (*pt_entry & PAGE_NO_EXEC) {
+        perm |= PAGE_NO_EXEC;
+    }
+    if (*pt_entry & PAGE_HUGE) {
+        perm |= PAGE_HUGE;
+    }
+
+    *pt_entry = page2pa(new_page) | perm;
+
 
     // Add the write permission again since there is a private copy
-    *pt_entry |= PAGE_WRITE;
+    // *pt_entry |= PAGE_WRITE;
 
     return 1;
 }

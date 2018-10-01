@@ -271,13 +271,23 @@ void copy_vma(struct env *old, struct env *new) {
     struct vma* vma_new_prev;
 
     for (i = 0; i < 128; i++) {
-        // Remember the original next and prev, set them after copy
-        vma_new_next = vma_new->next;
-        vma_new_prev = vma_new->prev;
+        vma_new->type = vma_old->type;
+        vma_new->va = vma_old->va;
+        vma_new->len = vma_old->len;
+        vma_new->perm = vma_old->perm;
 
-        memcpy((void *) &(vma_new), (void *) &(vma_old), sizeof(struct vma *));
-        vma_new->next = vma_new_next;
-        vma_new->prev = vma_new_prev;
+        vma_new->mem_va = vma_old->mem_va;
+        vma_new->file_va = vma_old->file_va;
+        vma_new->mem_size = vma_old->mem_size;
+        vma_new->file_size = vma_old->file_size;
+
+        // // Remember the original next and prev, set them after copy
+        // vma_new_next = vma_new->next;
+        // vma_new_prev = vma_new->prev;
+
+        // memcpy((void *) &(vma_new), (void *) &(vma_old), sizeof(struct vma *));
+        // vma_new->next = vma_new_next;
+        // vma_new->prev = vma_new_prev;
 
         // Go to next vma
         vma_old = vma_old->next;
@@ -357,8 +367,9 @@ int copy_pml4(struct env *old, struct env *new) {
 
                 // Check huge pages,
                 if (pgdir_old->entries[u] & PAGE_HUGE) {
-                    memcpy((void *) &(pgdir_new->entries[u]), 
-                           (void *) &(pgdir_old->entries[u]), sizeof(physaddr_t));
+                    pgdir_new->entries[u] = pgdir_old->entries[u];
+                    // memcpy((void *) &(pgdir_new->entries[u]), 
+                    //        (void *) &(pgdir_old->entries[u]), sizeof(physaddr_t));
                     continue;
                 }
 
@@ -373,14 +384,48 @@ int copy_pml4(struct env *old, struct env *new) {
                     if (!(pt_old->entries[v] & PAGE_PRESENT))
                         continue;
 
-                    memcpy((void *) &(pt_new->entries[v]), 
-                           (void *) &(pt_old->entries[v]), sizeof(physaddr_t));
+                    pt_new->entries[v] = pt_old->entries[v];
+                    // memcpy((void *) &(pt_new->entries[v]), 
+                    //        (void *) &(pt_old->entries[v]), sizeof(physaddr_t));
+
                 }
             }
         }
     }
     return 0;
 }
+
+
+void check_vma(struct vma *old_vma, struct vma *new_vma) {
+    cprintf("[CHECK_VMA] Start\n");
+    int i = 0;
+    while (old_vma != NULL) {
+        cprintf("i = %d\n", i);
+        if (old_vma == new_vma) {
+            cprintf("[CHECK_VMA] share same address! ERROR\n");
+            break;
+        }
+
+        if (old_vma->va != new_vma->va) {
+            cprintf("[CHECK_VMA] dont share same start address! ERROR\n");
+            cprintf("[CHECK_VMA] old: %llx - new: %llx\n", old_vma->va, new_vma->va);
+            break;
+        }
+
+        if (old_vma->len != new_vma->len) {
+            cprintf("[CHECK_VMA] dont share same length! ERROR\n");
+            break;
+        }
+
+        old_vma = old_vma->next;
+        new_vma = new_vma->next;
+        i++;
+    }
+    cprintf("[CHECK_VMA] done\n");
+}
+
+
+
 
 // Fork: create a new env based on the parent, curenv
 // TODO:
@@ -410,6 +455,7 @@ static int sys_fork(void)
 
     // Copy data from VMA
     copy_vma(curenv, new_env);
+    check_vma(curenv->vma, new_env->vma);
 
     cprintf("[SYS_FORK] cur vma: %llx\n", curenv->vma);
     cprintf("[SYS_FORK] new vma: %llx\n", new_env->vma);
@@ -434,6 +480,9 @@ static int sys_fork(void)
     // Copy the state
     memcpy((void *) &(new_env->env_frame), (void *) &(curenv->env_frame), 
            sizeof(curenv->env_frame));
+
+    cprintf("[SYS_FORK] rflags old: %d - new: %d\n", 
+            (curenv->env_frame).rflags, (new_env->env_frame).rflags);
 
     // Child return
     cprintf("[SYS_FORK] END\n");

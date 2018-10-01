@@ -9,5 +9,5 @@ void idt_init(void);
 void idt_init_percpu(void);
 void int_handler(struct int_frame *frame);
 void page_fault_handler(struct int_frame *frame);
-int cow(struct int_frame *frame, void *fault_va, uintptr_t fault_va_aligned, int is_write);
+int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write);
 int page_fault_load_page(void *fault_va_aligned);
