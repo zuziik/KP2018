@@ -241,7 +241,8 @@ void enforce_cow(struct page_table *pml4) {
 
                 // Check huge pages,
                 if (pgdir->entries[u] & PAGE_HUGE && pgdir->entries[u] & PAGE_WRITE) {
-                    pgdir->entries[u] &= PAGE_WRITE;
+                    // cprintf("[ENFORCE_COW] huge page\n");
+                    pgdir->entries[u] &= ~PAGE_WRITE;
                     continue;
                 }
 
@@ -252,7 +253,8 @@ void enforce_cow(struct page_table *pml4) {
                         continue;
 
                     if (pt->entries[v] & PAGE_WRITE) {
-                        pt->entries[v] &= PAGE_WRITE;
+                        // cprintf("[ENFORCE_COW] normal page\n");
+                        pt->entries[v] &= ~PAGE_WRITE;
                     }
                 }
             }
@@ -260,44 +262,67 @@ void enforce_cow(struct page_table *pml4) {
     }
 }
 
+// Copy the vma structure from old env to new env
 void copy_vma(struct env *old, struct env *new) {
     int i;
-
     struct vma* vma_old = old->vma;
     struct vma* vma_new = new->vma;
-
-    struct vma* vma_old_next;
-    struct vma* vma_old_prev;
     struct vma* vma_new_next;
     struct vma* vma_new_prev;
 
     for (i = 0; i < 128; i++) {
-        vma_old_next = vma_old->next;
-        vma_old_prev = vma_old->prev;
-
+        // Remember the original next and prev, set them after copy
         vma_new_next = vma_new->next;
         vma_new_prev = vma_new->prev;
 
-        memcpy((void *) &(vma_new), (void *) &(vma_old), sizeof(struct vma));
+        memcpy((void *) &(vma_new), (void *) &(vma_old), sizeof(struct vma *));
         vma_new->next = vma_new_next;
         vma_new->prev = vma_new_prev;
+
+        // Go to next vma
+        vma_old = vma_old->next;
+        vma_new = vma_new->next;
     }    
 }
 
+// Try to alloc a page for table in new page table based on old one
+int alloc_table(struct page_table *old, struct page_table *new, size_t index) {
+    struct page_info *p;
+    int perm = PAGE_PRESENT;
+
+    // Try to get a phsyical page for table entry
+    if (!(p = page_alloc(ALLOC_ZERO))) {
+        cprintf("[ALLOC_TABLE] out of memory\n");
+        return -1;
+    }
+
+    // Get the permisisons based on old one
+    if (old->entries[index] & PAGE_USER) {
+        perm |= PAGE_USER;
+    }
+    if (old->entries[index] & PAGE_WRITE) {
+        perm |= PAGE_WRITE;
+    }
+    if (old->entries[index] & PAGE_NO_EXEC) {
+        perm |= PAGE_NO_EXEC;
+    }
+    if (old->entries[index] & PAGE_HUGE) {
+        perm |= PAGE_HUGE;
+    }
+
+    // Set the page
+    p->pp_ref++;
+    new->entries[index] = PADDR((struct page_table *)KADDR(page2pa(p))) | perm;
+    return 0;
+}
+
+// Copy all the page tables from old env to new env
+// Only copy the physical mem associated with the tables, not the mappings
 int copy_pml4(struct env *old, struct env *new) {
     cprintf("[COPY_PML4] Start\n");
 
     struct page_table *pdpt_new, *pdpt_old, *pgdir_new, *pgdir_old, *pt_new, *pt_old;
     size_t s, t, u, v;
-
-    struct page_info *p;
-    if (! (p = page_alloc(ALLOC_ZERO))) {
-        cprintf("[COPY_PML4] out of memory\n");
-        return -1;
-    }
-    p->pp_ref++;
-
-    new->env_pml4 = (struct page_table *) p;
 
     struct page_table *pml4_new = new->env_pml4;
     struct page_table *pml4_old = old->env_pml4;
@@ -308,59 +333,48 @@ int copy_pml4(struct env *old, struct env *new) {
             continue;
 
         // We have pdp entry in pml4 - we must allocate one in new env, too
-        // TODO - make this code a function, or use entry_in_table instead
-        if (! (p = page_alloc(ALLOC_ZERO))) {
-            cprintf("[COPY_PML4] out of memory\n");
+        if (alloc_table(pml4_old, pml4_new, s) < 0) {
             return -1;
         }
-        p->pp_ref++;
-        pml4_new->entries[s] = PADDR((struct page_table *)KADDR(page2pa(p))) | PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
-
+        
         // Loop through pdp entries
         pdpt_old = (void *)(KERNEL_VMA + PAGE_ADDR(pml4_old->entries[s]));
         pdpt_new = (void *)(KERNEL_VMA + PAGE_ADDR(pml4_new->entries[s]));
-
         for (t = 0; t < PAGE_TABLE_ENTRIES; ++t) {
             if (!(pdpt_old->entries[t] & PAGE_PRESENT))
                 continue;
 
-            if (! (p = page_alloc(ALLOC_ZERO))) {
-                cprintf("[COPY_PML4] out of memory\n");
+            if (alloc_table(pdpt_old, pdpt_new, t) < 0) {
                 return -1;
             }
-            p->pp_ref++;
-            pdpt_new->entries[t] = PADDR((struct page_table *)KADDR(page2pa(p))) | PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
 
             // Loop through pd entries
             pgdir_old = (void *)(KERNEL_VMA + PAGE_ADDR(pdpt_old->entries[t]));
             pgdir_new = (void *)(KERNEL_VMA + PAGE_ADDR(pdpt_new->entries[t]));
-
             for (u = 0; u < PAGE_TABLE_ENTRIES; ++u) {
                 if (!(pgdir_old->entries[u] & PAGE_PRESENT))
                     continue;
 
                 // Check huge pages,
                 if (pgdir_old->entries[u] & PAGE_HUGE) {
-                    memcpy((void *) &(pgdir_new->entries[u]), (void *) &(pgdir_old->entries[u]), sizeof(physaddr_t));
+                    memcpy((void *) &(pgdir_new->entries[u]), 
+                           (void *) &(pgdir_old->entries[u]), sizeof(physaddr_t));
                     continue;
                 }
 
-                if (! (p = page_alloc(ALLOC_ZERO))) {
-                    cprintf("[COPY_PML4] out of memory\n");
+                if (alloc_table(pgdir_old, pgdir_new, u) < 0) {
                     return -1;
                 }
-                p->pp_ref++;
-                pgdir_new->entries[u] = PADDR((struct page_table *)KADDR(page2pa(p))) | PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
 
                 // Loop through page table
                 pt_old = (void *)(KERNEL_VMA + PAGE_ADDR(pgdir_old->entries[u]));
                 pt_new = (void *)(KERNEL_VMA + PAGE_ADDR(pgdir_new->entries[u]));
-
                 for (v = 0; v < PAGE_TABLE_ENTRIES; ++v) {
                     if (!(pt_old->entries[v] & PAGE_PRESENT))
                         continue;
 
-                    memcpy((void *) &(pt_new->entries[v]), (void *) &(pt_old->entries[v]), sizeof(physaddr_t));
+                    memcpy((void *) &(pt_new->entries[v]), 
+                           (void *) &(pt_old->entries[v]), sizeof(physaddr_t));
                 }
             }
         }
@@ -418,7 +432,6 @@ static int sys_fork(void)
     cprintf("[SYS_FORK] After enforce cow\n");
 
     // Copy the state
-    // new_env->env_frame = curenv->env_frame
     memcpy((void *) &(new_env->env_frame), (void *) &(curenv->env_frame), 
            sizeof(curenv->env_frame));
 

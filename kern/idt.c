@@ -294,7 +294,9 @@ void page_fault_handler(struct int_frame *frame)
     // Check protection violations for copy-on-write.
     // Only destroy env if it wasnt a copy-on-write case
     if (is_protection) {
-        is_cow = cow(frame, fault_va, fault_va_aligned);
+        cprintf("[PAGE_FAULT_HANDLER] check cow\n");
+        is_cow = cow(frame, fault_va, fault_va_aligned, (frame->err_code & 2) == 2);
+        cprintf("[PAGE_FAULT_HANDLER] is_cow = %d\n", is_cow);
         if (is_cow) {
             return;
         }
@@ -328,16 +330,17 @@ void page_fault_handler(struct int_frame *frame)
 }
 
 // Protection violation in page fault: check if cow must be used
-int cow(struct int_frame *frame, void *fault_va, uintptr_t fault_va_aligned) {
+int cow(struct int_frame *frame, void *fault_va, uintptr_t fault_va_aligned, int is_write) {
     struct vma *vma;
     struct page_info *new_page, *old_page;
     physaddr_t *pt_entry = NULL;
 
     // Get vma associated with faulting virt addr
     vma = vma_lookup(curenv, (void *)fault_va_aligned);
+    cprintf("vma = %llx\n", vma);
 
     // A regular protection fault, no cow
-    if (vma == NULL || !(vma->perm & PAGE_WRITE)) {
+    if (vma == NULL || !(vma->perm & PAGE_WRITE) || !is_write) {
         return 0;
     }
 
