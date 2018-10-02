@@ -102,8 +102,8 @@ void sched_yield(void)
     // Run the env
     if (env != NULL) {
         cprintf("[AAA] [CCC] new - %d\n", env->env_id);
-        env->timeslice = 100000000;
-        env->prev_time = time;
+        // env->timeslice = 100000000;
+        // env->prev_time = time;
         env_run(env);
     }
 

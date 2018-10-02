@@ -358,7 +358,14 @@ int copy_pml4(struct env *old, struct env *new) {
 
                 // Check huge pages,
                 if (pgdir_old->entries[u] & PAGE_HUGE) {
-                    pgdir_new->entries[u] = pgdir_old->entries[u];
+                    if (pgdir_old->entries[u] & PAGE_WRITE) {
+                        if (alloc_table(pgdir_old, pgdir_new, u) < 0) {
+                        return -1;
+                    }
+                    else {
+                        pgdir_new->entries[u] = pgdir_old->entries[u];
+                    }
+                }
                     continue;
                 }
 
@@ -373,7 +380,14 @@ int copy_pml4(struct env *old, struct env *new) {
                     if (!(pt_old->entries[v] & PAGE_PRESENT))
                         continue;
 
-                    pt_new->entries[v] = pt_old->entries[v];
+                    if (!(pt_old->entries[v] & PAGE_WRITE)) {
+                        if (alloc_table(pt_old, pt_new, v) < 0) {
+                            return -1;
+                        }
+                    }
+                    else {
+                        pt_new->entries[v] = pt_old->entries[v];                        
+                    }
                 }
             }
         }
@@ -458,8 +472,8 @@ static int sys_fork(void)
 
     // Enforce COW: remove all PAGE_WRITE permissions from leaves in pml4 of 
     // child and parent. VMA still has those permissions
-    enforce_cow(curenv->env_pml4);
-    enforce_cow(new_env->env_pml4);
+    // enforce_cow(curenv->env_pml4);
+    // enforce_cow(new_env->env_pml4);
 
     cprintf("[SYS_FORK] After enforce cow\n");
 
@@ -476,7 +490,7 @@ static int sys_fork(void)
     * TODO return values and RAX values - this doesn't work properly
     */
 
-    // new_env->env_frame.rax = 0;
+    new_env->env_frame.rax = 0;
     // curenv->env_frame.rax = new_env->env_id;
 
     // Child return
