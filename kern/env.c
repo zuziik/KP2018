@@ -168,7 +168,7 @@ static int env_setup_vm(struct env *e)
 // Init all the values in the vma structure
 static int env_setup_vma(struct env *e) {
     cprintf("[ENV SETUP VMA] start\n");
-    struct vma *vma_list = e->vma;
+    struct vma *vma_list = e->vma_array;
     int j;
 
     for (j = 0; j < 128; j++) {
@@ -184,6 +184,7 @@ static int env_setup_vma(struct env *e) {
         vma_list[j].prev = (j == 0) ? NULL : &vma_list[j-1];
     }
 
+    e->vma = vma_list;
     cprintf("[ENV SETUP VMA] end\n");
     return 0;
 }
@@ -255,7 +256,7 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
 
     /* Enable interrupts while in user mode.
      * LAB 5: your code here. */
-    // FLAGS_IF: if 0, interrupts are disables, if 1, interrupts are enabled
+    // FLAGS_IF: if 0, interrupts are disabled, if 1, interrupts are enabled
     if (!(read_rflags() & FLAGS_IF)) {
         e->env_frame.rflags |= FLAGS_IF;
     }

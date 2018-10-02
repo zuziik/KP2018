@@ -83,7 +83,7 @@ void lapic_init(void)
      */
 
     /* LAB 5: your code here. */
-    lapicaddr = lapic_get_base();                   // MATTHIJS: only thing new in this file, easy
+    lapicaddr = lapic_get_base();                  
     if (!lapicaddr)
         return;
 

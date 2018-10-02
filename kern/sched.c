@@ -55,16 +55,6 @@ void sched_yield(void)
         // Update timeslice of curenv
         curenv->timeslice -= (time - curenv->prev_time);
         curenv->prev_time = time;
-
-        // If env is still running and timeslice is not 0, continue executing
-        cprintf("current-timeslice > 0 = %d\n", curenv->timeslice > 0);
-        if (curenv->timeslice > 0 && 
-            curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
-            cprintf("[AAA] current - timeslice = %d\n", curenv->timeslice);
-            env_run(curenv);
-            sched_halt();
-            return;
-        } 
     }
 
     // Corner case: curenv is last env so go circular
@@ -111,7 +101,7 @@ void sched_yield(void)
 
     // Run the env
     if (env != NULL) {
-        cprintf("[AAA] new - %d\n", env->env_id);
+        cprintf("[AAA] [CCC] new - %d\n", env->env_id);
         env->timeslice = 100000000;
         env->prev_time = time;
         env_run(env);

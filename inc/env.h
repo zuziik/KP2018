@@ -61,7 +61,12 @@ struct env {
     // Linked list of vma's and current amount of vma's (128 max)
     struct vma *vma;
 
-    // Keep track of the timeslice                      MATTHIJS
+    // Array of allocated VMAs (this is in order on disk, unlike the previous one)
+    // --> this pointer always shows at the first VMA and we can access them all
+    // as an array
+    struct vma *vma_array;
+
+    // Keep track of the timeslice                     
     int64_t timeslice;
     int64_t prev_time;
 

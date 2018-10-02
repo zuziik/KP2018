@@ -198,8 +198,7 @@ static void sys_yield(void)
     sched_yield();
 }
 
-/* MATTHIJS
- * Pause curenv and run the env with envid
+/* Pause curenv and run the env with envid
  * Continue executing curenv only if env is finished
  */
 static int sys_wait(envid_t envid)
@@ -281,14 +280,6 @@ void copy_vma(struct env *old, struct env *new) {
         vma_new->mem_size = vma_old->mem_size;
         vma_new->file_size = vma_old->file_size;
 
-        // // Remember the original next and prev, set them after copy
-        // vma_new_next = vma_new->next;
-        // vma_new_prev = vma_new->prev;
-
-        // memcpy((void *) &(vma_new), (void *) &(vma_old), sizeof(struct vma *));
-        // vma_new->next = vma_new_next;
-        // vma_new->prev = vma_new_prev;
-
         // Go to next vma
         vma_old = vma_old->next;
         vma_new = vma_new->next;
@@ -368,8 +359,6 @@ int copy_pml4(struct env *old, struct env *new) {
                 // Check huge pages,
                 if (pgdir_old->entries[u] & PAGE_HUGE) {
                     pgdir_new->entries[u] = pgdir_old->entries[u];
-                    // memcpy((void *) &(pgdir_new->entries[u]), 
-                    //        (void *) &(pgdir_old->entries[u]), sizeof(physaddr_t));
                     continue;
                 }
 
@@ -385,9 +374,6 @@ int copy_pml4(struct env *old, struct env *new) {
                         continue;
 
                     pt_new->entries[v] = pt_old->entries[v];
-                    // memcpy((void *) &(pt_new->entries[v]), 
-                    //        (void *) &(pt_old->entries[v]), sizeof(physaddr_t));
-
                 }
             }
         }
@@ -484,13 +470,24 @@ static int sys_fork(void)
     cprintf("[SYS_FORK] rflags old: %d - new: %d\n", 
             (curenv->env_frame).rflags, (new_env->env_frame).rflags);
 
+    cprintf("CCC curenv->env_id: %d, new_env->env_id: %d\n", curenv->env_id, new_env->env_id);
+
+    /*
+    * TODO return values and RAX values - this doesn't work properly
+    */
+
+    // new_env->env_frame.rax = 0;
+    // curenv->env_frame.rax = new_env->env_id;
+
     // Child return
     cprintf("[SYS_FORK] END\n");
     if (curenv->env_id == new_env->env_id) {
+        new_env->env_frame.rax = 0;
         return 0;
     }
     // Parent return
     else {
+        curenv->env_frame.rax = new_env->env_id;
         return new_env->env_id;
     }
 }

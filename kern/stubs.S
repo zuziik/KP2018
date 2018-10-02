@@ -50,7 +50,7 @@ ISR_ERRCODE IRQ_ERROR
 
 isr_common_stub:
     /* LAB 3: your code here. */
-    cli # clear interrupt flag, lab 5
+    # cli # clear interrupt flag, lab 5 - not needed if we use INT_TRAP for everything (plus, if we wanted to use something else, it wouldn't work)
 
     pushq %rax
     pushq %rcx
