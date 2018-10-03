@@ -41,10 +41,11 @@ void sched_yield(void)
     struct env *env = NULL;
     int curenv_i, i;
     int64_t time = read_tsc();
+    int64_t diff;
 
     // Just destroyed the previous current env
     if (curenv == NULL) {
-        curenv_i = get_env_index(env_free_list->env_id);        // MATTHIJS: is this correct, made the free list non-static to access it
+        curenv_i = get_env_index(env_free_list->env_id);
 
         // Curenv just finished so reset the envs which were paused
         reset_pause(env_free_list->env_id);
@@ -53,8 +54,28 @@ void sched_yield(void)
         curenv_i = get_env_index(curenv->env_id);
 
         // Update timeslice of curenv
-        curenv->timeslice -= (time - curenv->prev_time);
-        curenv->prev_time = time;
+        if (time >= curenv->prev_time)   
+            diff =  time - curenv->prev_time;
+        else
+            diff = time - curenv->prev_time + 0x100000000;
+
+        if (curenv->timeslice > diff) {
+            curenv->timeslice -= diff;
+            curenv->prev_time = time;
+
+            // If env is still running and timeslice is not 0, continue executing
+            if (curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
+                env_run(curenv);
+                sched_halt();
+                return;
+            }         
+            
+        }
+        else {
+            curenv->timeslice = 0;
+            curenv->prev_time = time;
+        }
+
     }
 
     // Corner case: curenv is last env so go circular
@@ -102,8 +123,8 @@ void sched_yield(void)
     // Run the env
     if (env != NULL) {
         cprintf("[AAA] [CCC] new - %d\n", env->env_id);
-        // env->timeslice = 100000000;
-        // env->prev_time = time;
+        env->timeslice = 100000000;
+        env->prev_time = time;
         env_run(env);
     }
 

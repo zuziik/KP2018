@@ -19,7 +19,7 @@
 #include <kern/vma.h>
 
 struct env *envs = NULL;            /* All environments */
-struct env *env_free_list;          /* Free environment list */                 // Matthijs: removed static, added to header
+struct env *env_free_list;          /* Free environment list */            
                                     /* (linked by env->env_link) */
 
 #define ENVGENSHIFT 12      /* >= LOGNENV */
@@ -227,7 +227,7 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     e->env_status = ENV_RUNNABLE;
     e->env_runs = 0;
 
-    e->timeslice = 100000000;                      // MATTHIJS LAB 5
+    e->timeslice = 100000000;
     e->prev_time = 0;
     e->pause = -1;
 
@@ -397,12 +397,12 @@ static void load_icode(struct env *e, uint8_t *binary)
     /* Now map one page for the program's initial stack at virtual address
      * USTACKTOP - PGSIZE. */
 
-    /* LAB 3: your code here. */
-    struct page_info *p = NULL;
+    // /* LAB 3: your code here. */
+    // struct page_info *p = NULL;
 
-    /* Allocate a page for the page directory */
-    if (!(p = page_alloc(0)))
-        panic("Couldn't allocate memory for environment initial stack");
+    //  Allocate a page for the page directory 
+    // if (!(p = page_alloc(0)))
+    //     panic("Couldn't allocate memory for environment initial stack");
 
     // Create a Vma for the user stack
     vma_insert(e, VMA_ANON, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_SIZE, 
@@ -593,7 +593,7 @@ void env_run(struct env *e)
     curenv->env_status = ENV_RUNNING;
     curenv->env_runs += 1;
 
-    // First run env, is not inited correct yet                         MATTHIJS
+    // First run env, is not initialized correct yet
     if (curenv->prev_time == 0) {
         curenv->prev_time = read_tsc();
     }

@@ -804,8 +804,10 @@ void tlb_invalidate(struct page_table *pml4, void *va)
 {
     /* Flush the entry only if we're modifying the current address space. */
     // cprintf("curent: %llx\n", curenv);
-    if (!curenv || curenv->env_pml4 == pml4)
+    // if (!curenv)
         flush_page(va);
+    // else if (curenv->env_pml4 == pml4)
+    //     flush_page(va);
 }
 
 /*
@@ -845,8 +847,7 @@ void *mmio_map_region(physaddr_t pa, size_t size)
      * Hint: the staff solution uses boot_map_region().
      */
 
-    physaddr_t pa_rounded = ROUNDDOWN(pa, PAGE_SIZE);
-    size = ROUNDUP(pa + size, PAGE_SIZE);
+    size = ROUNDUP(size, PAGE_SIZE);
     if (base + size > MMIO_LIM) {
         panic("[MMIO_MAP_REGION] Out of memory!");
     }

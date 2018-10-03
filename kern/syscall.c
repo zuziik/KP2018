@@ -313,7 +313,7 @@ int alloc_table(struct page_table *old, struct page_table *new, size_t index) {
 
     // Set the page
     p->pp_ref++;
-    new->entries[index] = PADDR((struct page_table *)KADDR(page2pa(p))) | perm;
+    new->entries[index] = page2pa(p) | perm;
     return 0;
 }
 
@@ -323,6 +323,7 @@ int copy_pml4(struct env *old, struct env *new) {
     cprintf("[COPY_PML4] Start\n");
 
     struct page_table *pdpt_new, *pdpt_old, *pgdir_new, *pgdir_old, *pt_new, *pt_old;
+    struct page_info *page;
     size_t s, t, u, v;
 
     struct page_table *pml4_new = new->env_pml4;
@@ -339,8 +340,8 @@ int copy_pml4(struct env *old, struct env *new) {
         }
         
         // Loop through pdp entries
-        pdpt_old = (void *)(KERNEL_VMA + PAGE_ADDR(pml4_old->entries[s]));
-        pdpt_new = (void *)(KERNEL_VMA + PAGE_ADDR(pml4_new->entries[s]));
+        pdpt_old = (struct page_table *) KADDR(PAGE_ADDR(pml4_old->entries[s]));
+        pdpt_new = (struct page_table *) KADDR(PAGE_ADDR(pml4_new->entries[s]));
         for (t = 0; t < PAGE_TABLE_ENTRIES; ++t) {
             if (!(pdpt_old->entries[t] & PAGE_PRESENT))
                 continue;
@@ -350,22 +351,18 @@ int copy_pml4(struct env *old, struct env *new) {
             }
 
             // Loop through pd entries
-            pgdir_old = (void *)(KERNEL_VMA + PAGE_ADDR(pdpt_old->entries[t]));
-            pgdir_new = (void *)(KERNEL_VMA + PAGE_ADDR(pdpt_new->entries[t]));
+            pgdir_old = (struct page_table *) KADDR(PAGE_ADDR(pdpt_old->entries[t]));
+            pgdir_new = (struct page_table *) KADDR(PAGE_ADDR(pdpt_new->entries[t]));
             for (u = 0; u < PAGE_TABLE_ENTRIES; ++u) {
                 if (!(pgdir_old->entries[u] & PAGE_PRESENT))
                     continue;
 
                 // Check huge pages,
                 if (pgdir_old->entries[u] & PAGE_HUGE) {
-                    if (pgdir_old->entries[u] & PAGE_WRITE) {
-                        if (alloc_table(pgdir_old, pgdir_new, u) < 0) {
-                        return -1;
-                    }
-                    else {
-                        pgdir_new->entries[u] = pgdir_old->entries[u];
-                    }
-                }
+                    // don't copy the page, just increase refcount on physical page
+                    pgdir_new->entries[u] = pgdir_old->entries[u];
+                    page = pa2page(PAGE_ADDR(pgdir_old->entries[u]));
+                    page->pp_ref++;
                     continue;
                 }
 
@@ -374,24 +371,21 @@ int copy_pml4(struct env *old, struct env *new) {
                 }
 
                 // Loop through page table
-                pt_old = (void *)(KERNEL_VMA + PAGE_ADDR(pgdir_old->entries[u]));
-                pt_new = (void *)(KERNEL_VMA + PAGE_ADDR(pgdir_new->entries[u]));
+                pt_old = (struct page_table *) KADDR(PAGE_ADDR(pgdir_old->entries[u]));
+                pt_new = (struct page_table *) KADDR(PAGE_ADDR(pgdir_new->entries[u]));
                 for (v = 0; v < PAGE_TABLE_ENTRIES; ++v) {
                     if (!(pt_old->entries[v] & PAGE_PRESENT))
                         continue;
 
-                    if (!(pt_old->entries[v] & PAGE_WRITE)) {
-                        if (alloc_table(pt_old, pt_new, v) < 0) {
-                            return -1;
-                        }
-                    }
-                    else {
-                        pt_new->entries[v] = pt_old->entries[v];                        
-                    }
+                    // don't copy the page, just increase refcount on physical page
+                    pt_new->entries[v] = pt_old->entries[v];  
+                    page = pa2page(PAGE_ADDR(pt_old->entries[v]));
+                    page->pp_ref++;       
                 }
             }
         }
     }
+    cprintf("copy pml4 return\n");
     return 0;
 }
 
@@ -400,7 +394,7 @@ void check_vma(struct vma *old_vma, struct vma *new_vma) {
     cprintf("[CHECK_VMA] Start\n");
     int i = 0;
     while (old_vma != NULL) {
-        cprintf("i = %d\n", i);
+        // cprintf("i = %d\n", i);
         if (old_vma == new_vma) {
             cprintf("[CHECK_VMA] share same address! ERROR\n");
             break;
@@ -440,10 +434,6 @@ static int sys_fork(void)
     // return -1;
     cprintf("[SYS_FORK] START\n");
     struct env *new_env;
-    if (env_free_list == NULL) {
-        cprintf("[SYS_FORK] END CRASH\n");
-        return -1;
-    }
 
     // Get a new, free environment
     if (env_alloc(&new_env, curenv->env_id) < 0) {
@@ -457,9 +447,6 @@ static int sys_fork(void)
     copy_vma(curenv, new_env);
     check_vma(curenv->vma, new_env->vma);
 
-    cprintf("[SYS_FORK] cur vma: %llx\n", curenv->vma);
-    cprintf("[SYS_FORK] new vma: %llx\n", new_env->vma);
-
     cprintf("[SYS_FORK] After vma copy\n");
 
     // Copy over the page tables
@@ -472,8 +459,8 @@ static int sys_fork(void)
 
     // Enforce COW: remove all PAGE_WRITE permissions from leaves in pml4 of 
     // child and parent. VMA still has those permissions
-    // enforce_cow(curenv->env_pml4);
-    // enforce_cow(new_env->env_pml4);
+    enforce_cow(curenv->env_pml4);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+    enforce_cow(new_env->env_pml4);
 
     cprintf("[SYS_FORK] After enforce cow\n");
 

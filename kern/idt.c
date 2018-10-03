@@ -349,19 +349,9 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
 
     cprintf("COW - cow detected\n");
 
-    // Get a new physical page and copy the write protected page to new phys mem
-    new_page = page_alloc(ALLOC_ZERO);
-    cprintf("1\n");
     old_page = page_lookup(curenv->env_pml4, (void *) fault_va_aligned, &pt_entry);
-    cprintf("2\n");
 
-    new_page = old_page;
-    // memcpy((void *) page2pa(new_page), (void *) page2pa(old_page), sizeof(old_page));
-    cprintf("3\n");
-    if (new_page->pp_ref != old_page->pp_ref) {
-        panic("AAAAAAAAAAAAAAAAA\n");
-    }
-
+    cprintf("cow 1\n");
     if (*pt_entry & PAGE_USER) {
         perm |= PAGE_USER;
     }
@@ -372,11 +362,22 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
         perm |= PAGE_HUGE;
     }
 
-    *pt_entry = page2pa(new_page) | perm;
+    cprintf("cow 2\n");
+    cprintf("cow pp_ref: %d\n", old_page->pp_ref);
+    // Only one environment owns this page, just change the permissions
+    if (old_page->pp_ref == 1) {
+        *pt_entry = page2pa(old_page) | perm;
+        cprintf("cow 3a\n");
+    }
+    else {
+        new_page = page_alloc(ALLOC_ZERO);
+        memcpy((void *) new_page, (void *) old_page, PAGE_SIZE);
+        old_page->pp_ref--;
+        new_page->pp_ref++;
 
-
-    // Add the write permission again since there is a private copy
-    // *pt_entry |= PAGE_WRITE;
+        *pt_entry = page2pa(new_page) | perm;
+        cprintf("cow 3b\n");
+    }
 
     return 1;
 }
