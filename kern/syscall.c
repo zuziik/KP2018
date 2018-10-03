@@ -227,13 +227,13 @@ void enforce_cow(struct page_table *pml4) {
             continue;
 
         // Loop through pdp entries
-        pdpt = (void *)(KERNEL_VMA + PAGE_ADDR(pml4->entries[s]));
+        pdpt = (struct page_table *) KADDR(PAGE_ADDR(pml4->entries[s]));
         for (t = 0; t < PAGE_TABLE_ENTRIES; ++t) {
             if (!(pdpt->entries[t] & PAGE_PRESENT))
                 continue;
 
             // Loop through pd entries
-            pgdir = (void *)(KERNEL_VMA + PAGE_ADDR(pdpt->entries[t]));
+            pgdir = (struct page_table *) KADDR(PAGE_ADDR(pdpt->entries[t]));
             for (u = 0; u < PAGE_TABLE_ENTRIES; ++u) {
                 if (!(pgdir->entries[u] & PAGE_PRESENT))
                     continue;
@@ -246,7 +246,7 @@ void enforce_cow(struct page_table *pml4) {
                 }
 
                 // Loop through page table
-                pt = (void *)(KERNEL_VMA + PAGE_ADDR(pgdir->entries[u]));
+                pt = (struct page_table *) KADDR(PAGE_ADDR(pgdir->entries[u]));
                 for (v = 0; v < PAGE_TABLE_ENTRIES; ++v) {
                     if (!(pt->entries[v] & PAGE_PRESENT))
                         continue;
@@ -313,6 +313,7 @@ int alloc_table(struct page_table *old, struct page_table *new, size_t index) {
 
     // Set the page
     p->pp_ref++;
+    // cprintf("alloc table refcount: %d\n", p->pp_ref);
     new->entries[index] = page2pa(p) | perm;
     return 0;
 }
@@ -362,7 +363,7 @@ int copy_pml4(struct env *old, struct env *new) {
                     // don't copy the page, just increase refcount on physical page
                     pgdir_new->entries[u] = pgdir_old->entries[u];
                     page = pa2page(PAGE_ADDR(pgdir_old->entries[u]));
-                    page->pp_ref++;
+                    page->pp_ref++;                                                                                                                                 page->pp_ref++;
                     continue;
                 }
 
@@ -379,6 +380,7 @@ int copy_pml4(struct env *old, struct env *new) {
 
                     // don't copy the page, just increase refcount on physical page
                     pt_new->entries[v] = pt_old->entries[v];  
+                    cprintf("cow PA: %llx\n", PAGE_ADDR(pt_old->entries[v]));
                     page = pa2page(PAGE_ADDR(pt_old->entries[v]));
                     page->pp_ref++;       
                 }

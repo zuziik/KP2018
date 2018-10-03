@@ -202,6 +202,7 @@ void vma_map_populate(uintptr_t va, size_t size, int perm, struct env *env) {
         if (page_insert(env->env_pml4, page, (void *) virt_addr, perm) != 0) {
             panic("Could not map whole VMA in page tables with flag MAP_POPULATE\n");
         }
+        cprintf("vma map populate refcount: %d\n", page->pp_ref);
         virt_addr += PAGE_SIZE;
     }
 }

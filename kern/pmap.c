@@ -723,6 +723,7 @@ int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int per
 
     // Link page table entry to new page, PAGE_HUGE is handled via perm argument
     pp->pp_ref++;
+    // cprintf("page insert refcount: %d\n", pp->pp_ref);
     *addr = page2pa(pp) | perm | PAGE_PRESENT;
     return 0;
 }
@@ -804,10 +805,10 @@ void tlb_invalidate(struct page_table *pml4, void *va)
 {
     /* Flush the entry only if we're modifying the current address space. */
     // cprintf("curent: %llx\n", curenv);
-    // if (!curenv)
+    if (!curenv)
         flush_page(va);
-    // else if (curenv->env_pml4 == pml4)
-    //     flush_page(va);
+    else if (curenv->env_pml4 == pml4)
+        flush_page(va);
 }
 
 /*
@@ -847,13 +848,15 @@ void *mmio_map_region(physaddr_t pa, size_t size)
      * Hint: the staff solution uses boot_map_region().
      */
 
-    size = ROUNDUP(size, PAGE_SIZE);
+    physaddr_t pa_rounded = ROUNDDOWN(pa, PAGE_SIZE);
+    size = ROUNDUP(pa + size, PAGE_SIZE);
+    // size = ROUNDUP(size, PAGE_SIZE);
     if (base + size > MMIO_LIM) {
         panic("[MMIO_MAP_REGION] Out of memory!");
     }
 
     perm = PAGE_WRITE | PAGE_NO_EXEC | PAGE_NO_CACHE | PAGE_WRITE_THROUGH;
-    boot_map_region(kern_pml4, base, size, pa, perm);
+    boot_map_region(kern_pml4, base, size, pa_rounded, perm);
 
     base += size;
     return (void *) base - size;
