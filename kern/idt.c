@@ -291,12 +291,11 @@ void page_fault_handler(struct int_frame *frame)
     /* Handle kernel-mode page faults. */
     /* LAB 3: your code here. */
 
-    cprintf("[PAGE FAULT HANDLER] fault va: %llx\n", fault_va);
-
     // Check protection violations for copy-on-write.
     // Only destroy env if it wasnt a copy-on-write case
     if (is_protection) {
         cprintf("[PAGE_FAULT_HANDLER] check cow\n");
+        cprintf("is_write = %d\n", (frame->err_code & 2) == 2);
         is_cow = cow(fault_va, fault_va_aligned, (frame->err_code & 2) == 2);
         cprintf("[PAGE_FAULT_HANDLER] is_cow = %d - is_user = %d - is_userspace = %d\n", 
                 is_cow, is_user, fault_va_aligned < KERNEL_VMA);
@@ -353,6 +352,7 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
 
     old_page = page_lookup(curenv->env_pml4, (void *) fault_va_aligned, &pt_entry);
 
+    cprintf("cow 1\n");
     if (*pt_entry & PAGE_USER) {
         perm |= PAGE_USER;
     }
@@ -363,22 +363,29 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
         perm |= PAGE_HUGE;
     }
 
+    if (*pt_entry & PAGE_WRITE) {
+        cprintf("cow: ALREADY WRITABLE!!\n");
+    }
+
+    cprintf("cow 2\n");
     cprintf("cow pp_ref: %d\n", old_page->pp_ref);
     // Only one environment owns this page, just change the permissions
     if (old_page->pp_ref == 1) {
-        cprintf("cow - changing permissions\n");
         *pt_entry = page2pa(old_page) | perm;
+        cprintf("cow 3a\n");
     }
     else {
-        cprintf("cow - changing permissions and copying\n");
         new_page = page_alloc(ALLOC_ZERO);
-        memcpy((void *) KADDR(page2pa(new_page)), (void *) KADDR(page2pa(old_page)), PAGE_SIZE);
-        old_page->pp_ref--;
-        new_page->pp_ref++;
-        cprintf("cow refcount: old %d, new %d\n", old_page->pp_ref, new_page->pp_ref);
+        memcpy((void *) new_page, (void *) old_page, PAGE_SIZE);
+        old_page->pp_ref -= 1;
+        new_page->pp_ref = 1;
+        cprintf("pp_ref | new = %d | old = %d\n", new_page->pp_ref, old_page->pp_ref);
+
         *pt_entry = page2pa(new_page) | perm;
+        cprintf("cow 3b\n");
     }
 
+    tlb_invalidate(curenv->env_pml4, (void *) fault_va_aligned);
     return 1;
 }
 
@@ -399,7 +406,6 @@ int page_fault_load_page(void *fault_va_aligned) {
         } else if (page_insert(curenv->env_pml4, page, (void *) fault_va_aligned, vma->perm) != 0) {
             panic("Page fault error - couldn't map new page\n");
         } else {
-            // cprintf("page fault load page refcount: %d\n", page->pp_ref);
             // Copy the binary from kernel space to user space, for anonymous memory nothing more has to be done
             if (vma->type == VMA_BINARY) {
                 // Alligned start and end in userspace (dest)

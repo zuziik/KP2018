@@ -222,19 +222,19 @@ void enforce_cow(struct page_table *pml4) {
     size_t s, t, u, v;
 
     // Loop through pml4 entries
-    for (s = 0; s < PAGE_TABLE_ENTRIES; ++s) {
+    for (s = 0; s < PML4_INDEX(USER_TOP); ++s) {
         if (!(pml4->entries[s] & PAGE_PRESENT))
             continue;
 
         // Loop through pdp entries
-        pdpt = (struct page_table *) KADDR(PAGE_ADDR(pml4->entries[s]));
-        for (t = 0; t < PAGE_TABLE_ENTRIES; ++t) {
+        pdpt = (void *)(KERNEL_VMA + PAGE_ADDR(pml4->entries[s]));
+        for (t = 0; t < PML4_INDEX(USER_TOP); ++t) {
             if (!(pdpt->entries[t] & PAGE_PRESENT))
                 continue;
 
             // Loop through pd entries
-            pgdir = (struct page_table *) KADDR(PAGE_ADDR(pdpt->entries[t]));
-            for (u = 0; u < PAGE_TABLE_ENTRIES; ++u) {
+            pgdir = (void *)(KERNEL_VMA + PAGE_ADDR(pdpt->entries[t]));
+            for (u = 0; u < PML4_INDEX(USER_TOP); ++u) {
                 if (!(pgdir->entries[u] & PAGE_PRESENT))
                     continue;
 
@@ -246,8 +246,8 @@ void enforce_cow(struct page_table *pml4) {
                 }
 
                 // Loop through page table
-                pt = (struct page_table *) KADDR(PAGE_ADDR(pgdir->entries[u]));
-                for (v = 0; v < PAGE_TABLE_ENTRIES; ++v) {
+                pt = (void *)(KERNEL_VMA + PAGE_ADDR(pgdir->entries[u]));
+                for (v = 0; v < PML4_INDEX(USER_TOP); ++v) {
                     if (!(pt->entries[v] & PAGE_PRESENT))
                         continue;
 
@@ -312,8 +312,8 @@ int alloc_table(struct page_table *old, struct page_table *new, size_t index) {
     }
 
     // Set the page
-    p->pp_ref++;
-    // cprintf("alloc table refcount: %d\n", p->pp_ref);
+    // p->pp_ref++;
+    p->pp_ref = 1;
     new->entries[index] = page2pa(p) | perm;
     return 0;
 }
@@ -330,20 +330,24 @@ int copy_pml4(struct env *old, struct env *new) {
     struct page_table *pml4_new = new->env_pml4;
     struct page_table *pml4_old = old->env_pml4;
 
+    for (s = PML4_INDEX(USER_TOP); s < PAGE_TABLE_ENTRIES; s++) {
+        pml4_new->entries[s] = kern_pml4->entries[s];
+    }
+
     // Loop through pml4 entries
-    for (s = 0; s < PAGE_TABLE_ENTRIES; ++s) {
-        if (!(pml4_old->entries[s] & PAGE_PRESENT))
+    for (s = 0; s < PML4_INDEX(USER_TOP); ++s) {
+        if (!(pml4_old->entries[s] & PAGE_PRESENT)) 
             continue;
 
         // We have pdp entry in pml4 - we must allocate one in new env, too
         if (alloc_table(pml4_old, pml4_new, s) < 0) {
             return -1;
         }
-        
+
         // Loop through pdp entries
         pdpt_old = (struct page_table *) KADDR(PAGE_ADDR(pml4_old->entries[s]));
         pdpt_new = (struct page_table *) KADDR(PAGE_ADDR(pml4_new->entries[s]));
-        for (t = 0; t < PAGE_TABLE_ENTRIES; ++t) {
+        for (t = 0; t < PML4_INDEX(USER_TOP); ++t) {
             if (!(pdpt_old->entries[t] & PAGE_PRESENT))
                 continue;
 
@@ -354,7 +358,7 @@ int copy_pml4(struct env *old, struct env *new) {
             // Loop through pd entries
             pgdir_old = (struct page_table *) KADDR(PAGE_ADDR(pdpt_old->entries[t]));
             pgdir_new = (struct page_table *) KADDR(PAGE_ADDR(pdpt_new->entries[t]));
-            for (u = 0; u < PAGE_TABLE_ENTRIES; ++u) {
+            for (u = 0; u < PML4_INDEX(USER_TOP); ++u) {
                 if (!(pgdir_old->entries[u] & PAGE_PRESENT))
                     continue;
 
@@ -362,8 +366,9 @@ int copy_pml4(struct env *old, struct env *new) {
                 if (pgdir_old->entries[u] & PAGE_HUGE) {
                     // don't copy the page, just increase refcount on physical page
                     pgdir_new->entries[u] = pgdir_old->entries[u];
+                    cprintf("[1]phys_addr = %llx\n", pgdir_old->entries[u]);
                     page = pa2page(PAGE_ADDR(pgdir_old->entries[u]));
-                    page->pp_ref++;                                                                                                                                 page->pp_ref++;
+                    page->pp_ref++;
                     continue;
                 }
 
@@ -374,13 +379,15 @@ int copy_pml4(struct env *old, struct env *new) {
                 // Loop through page table
                 pt_old = (struct page_table *) KADDR(PAGE_ADDR(pgdir_old->entries[u]));
                 pt_new = (struct page_table *) KADDR(PAGE_ADDR(pgdir_new->entries[u]));
-                for (v = 0; v < PAGE_TABLE_ENTRIES; ++v) {
+                for (v = 0; v < PML4_INDEX(USER_TOP); ++v) {
                     if (!(pt_old->entries[v] & PAGE_PRESENT))
                         continue;
 
                     // don't copy the page, just increase refcount on physical page
                     pt_new->entries[v] = pt_old->entries[v];  
-                    cprintf("cow PA: %llx\n", PAGE_ADDR(pt_old->entries[v]));
+                    cprintf("[2]phys_addr = %llx - %llx\n", 
+                        pt_old->entries[v],
+                        PAGE_ADDR(pt_old->entries[v]));
                     page = pa2page(PAGE_ADDR(pt_old->entries[v]));
                     page->pp_ref++;       
                 }

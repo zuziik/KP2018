@@ -143,7 +143,6 @@ static int env_setup_vm(struct env *e)
 
     /* LAB 3: your code here. */
     p->pp_ref += 1;
-    // cprintf("env_setup_vm refcount: %d\n", p->pp_ref);
     e->env_pml4 = (struct page_table *)KADDR(page2pa(p));
 
     // The initial VA below UTOP is empty
@@ -302,7 +301,6 @@ static void region_alloc(struct env *e, void *va, size_t len)
         if (!(p = page_alloc(ALLOC_ZERO)))
             panic("Couldn't allocate memory for environment");
         page_insert(e->env_pml4, p, (void *)vi, PAGE_WRITE | PAGE_USER);
-        // cprintf("region alloc refcount: %d\n", p->pp_ref);
     }
 
     cprintf("[REGION ALLOC] end\n");
