@@ -38,6 +38,12 @@ void reset_pause(envid_t env_id) {
  */
 void sched_yield(void)
 {
+    if (!kernel_lock.locked) {
+        cprintf("[SCHED_YIELD] lock kernel start\n");
+        lock_kernel();
+        cprintf("[SCHED_YIELD] lock kernel finish\n");
+    }
+
     cprintf("[SCHED_YIELD] start\n\n");
     struct env *env = NULL;
     int curenv_i, i;
@@ -67,10 +73,8 @@ void sched_yield(void)
             // If env is still running and timeslice is not 0, continue executing
             if (curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
                 env_run(curenv);
-                sched_halt();
                 return;
-            }         
-            
+            }
         }
         else {
             curenv->timeslice = 0;
@@ -124,9 +128,10 @@ void sched_yield(void)
     // Run the env
     if (env != NULL) {
         cprintf("[AAA] [CCC] new - %d\n", env->env_id);
-        env->timeslice = 100000000;
+        env->timeslice = 1000000000;
         env->prev_time = time;
         env_run(env);
+        return;
     }
 
     /* sched_halt() never returns */
@@ -167,7 +172,9 @@ void sched_halt(void)
     xchg(&thiscpu->cpu_status, CPU_HALTED);
 
     /* Release the big kernel lock as if we were "leaving" the kernel */
+    cprintf("[SCHED_HALT] unlock kernel start\n");
     unlock_kernel();
+    cprintf("[SCHED_HALT] unlock kernel finish\n");
 
     /* Reset stack pointer, enable interrupts and then halt. */
     asm volatile(

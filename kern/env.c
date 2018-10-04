@@ -230,7 +230,7 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     e->env_status = ENV_RUNNABLE;
     e->env_runs = 0;
 
-    e->timeslice = 100000000;
+    e->timeslice = 1000000000;
     e->prev_time = 0;
     e->pause = -1;
 
@@ -607,5 +607,12 @@ void env_run(struct env *e)
     }
 
     load_pml4((void *)PADDR(curenv->env_pml4));
+
+    if (kernel_lock.locked) {
+        cprintf("[ENV_RUN] unlock kernel start\n");
+        unlock_kernel(); // MATTHIJS: When to unlock kernel? I dont know!
+        cprintf("[ENV_RUN] unlock kernel finish\n");
+    }
+    
     env_pop_frame(&curenv->env_frame);
 }

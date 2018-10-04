@@ -244,8 +244,11 @@ void int_handler(struct int_frame *frame)
         asm volatile("hlt");
 
     /* Re-acqurie the big kernel lock if we were halted in sched_yield(). */
-    if (xchg(&thiscpu->cpu_status, CPU_STARTED) == CPU_HALTED)
+    if (xchg(&thiscpu->cpu_status, CPU_STARTED) == CPU_HALTED) {
+        cprintf("[INT_HANDLER 0] lock kernel start\n");
         lock_kernel();
+        cprintf("[INT_HANDLER 0] lock kernel finish\n");
+    }
 
     /* Check that interrupts are disabled.
      * If this assertion fails, DO NOT be tempted to fix it by inserting a "cli"
@@ -261,15 +264,23 @@ void int_handler(struct int_frame *frame)
         /* Interrupt from user mode. */
         /* Acquire the big kernel lock before doing any serious kernel work.
          * LAB 6: your code here. */
-        lock_kernel();
-        assert(curenv);
+        if (!kernel_lock.locked) {
+            cprintf("[INT_HANDLER 1] lock kernel start\n");
+            lock_kernel();
+            cprintf("[INT_HANDLER 1] lock kernel finish\n");
+        }
 
+        assert(curenv);
 
         /* Garbage collect if current enviroment is a zombie. */
         if (curenv->env_status == ENV_DYING) {
             env_free(curenv);
             curenv = NULL;
             sched_yield();
+
+            cprintf("[INT_HANDLER 2] lock kernel start\n");
+            lock_kernel();
+            cprintf("[INT_HANDLER 2] lock kernel finish\n");
         }
 
         /* Copy interrupt frame (which is currently on the stack) into
@@ -287,7 +298,6 @@ void int_handler(struct int_frame *frame)
     /* If we made it to this point, then no other environment was scheduled, so
      * we should return to the current environment if doing so makes sense. */
     if (curenv && curenv->env_status == ENV_RUNNING) {
-        unlock_kernel(); // MATTHIJS: When to unlock kernel? I dont know!
         env_run(curenv);
     }
     else

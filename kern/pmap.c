@@ -297,7 +297,7 @@ static void mem_init_mp(void)
 
     /* Enable the NX-bit. */
     /* LAB 6: your code here. */
-    write_msr(MSR_EFER, MSR_EFER_NXE);
+    write_msr(MSR_EFER, read_msr(MSR_EFER) | MSR_EFER_NXE);
 
     /*
      * Map per-CPU stacks starting at KSTACKTOP, for up to 'NCPU' CPUs.

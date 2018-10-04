@@ -12,6 +12,7 @@
 #include <inc/string.h>
 
 #include <kern/spinlock.h>
+#include <kern/sched.h>
 
 static void boot_aps(void);
 
@@ -45,7 +46,9 @@ void kmain(struct boot_info *boot_info)
 
     /* Acquire the big kernel lock before waking up APs.
      * LAB 6: your code here. */
+    cprintf("[MAIN] lock kernel start\n");
     lock_kernel();
+    cprintf("[MAIN] lock kernel finish\n");
 
     /* Starting non-boot CPUs */
     boot_aps();
@@ -61,8 +64,6 @@ void kmain(struct boot_info *boot_info)
     ENV_CREATE(user_divzero, ENV_TYPE_USER);
     ENV_CREATE(user_divzero, ENV_TYPE_USER);
 #endif
-
-    unlock_kernel(); // MATTHIJS: When to unlock kernel? I dont know!
 
     /* We only have one user environment for now, so just run it. */
     env_run(&envs[0]);
@@ -100,6 +101,8 @@ static void boot_aps(void)
         /* Wait for the CPU to finish some basic setup in mp_main() */
         while(c->cpu_status != CPU_STARTED)
             ;
+
+        cprintf("[BOOT_APS] cpu %d is started\n", c->cpu_id);
     }
 }
 
@@ -129,9 +132,12 @@ void mp_main(void)
      * LAB 6: your code here.
      * MATTHIJS: TODO
      */
+    // panic("HEEEEEEEEEEEEEEEEEELP\n");
+    // cprintf("BBBBBBBBBBBBBBBBBBBBBBBBBBBB\n");
+    sched_yield();
 
     /* Remove this after you finish the per-CPU initialization code. */
-    for (;;);
+    // for (;;);
 }
 
 /*
