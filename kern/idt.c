@@ -9,6 +9,7 @@
 #include <kern/idt.h>
 #include <kern/monitor.h>
 #include <kern/sched.h>
+#include <kern/spinlock.h>
 #include <kern/syscall.h>
 
 #include <kern/pmap.h>
@@ -36,13 +37,6 @@ extern void isr18(void);
 extern void isr19(void);
 extern void isr128(void);
 
-extern void isr32(void);
-extern void isr33(void);
-extern void isr36(void);
-extern void isr39(void);
-extern void isr46(void);
-extern void isr51(void);
-
 static const char *int_names[256] = {
     [INT_DIVIDE] = "Divide-by-Zero Error Exception (#DE)",
     [INT_DEBUG] = "Debug (#DB)",
@@ -62,6 +56,7 @@ static const char *int_names[256] = {
     [INT_ALIGNMENT] = "Alignment Check (#AC)",
     [INT_MCE] = "Machine Check (#MC)",
     [INT_SIMD] = "SIMD Floating-Point (#XF)",
+    [INT_SECURITY] = "Security (#SX)",
     [IRQ_OFFSET...IRQ_OFFSET+16] = "Hardware interrupt",
     [INT_SYSCALL] = "System call",
 };
@@ -82,7 +77,7 @@ static const char *get_int_name(unsigned int_no)
 
 void print_int_frame(struct int_frame *frame)
 {
-    cprintf("INT frame at %p\n", frame);
+    cprintf("INT frame at %p from CPU %d\n", frame, cpunum());
 
     /* Print the interrupt number and the name. */
     cprintf(" INT %u: %s\n",
@@ -143,10 +138,11 @@ void idt_init(void)
 
     /* LAB 3: your code here. */
 
+    // TODO what about the flags and selectors?
     set_idt_entry(&entries[INT_DIVIDE], isr0, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
     set_idt_entry(&entries[INT_DEBUG], isr1, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
     set_idt_entry(&entries[INT_NMI], isr2, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
-    set_idt_entry(&entries[INT_BREAK], isr3,  IDT_PRESENT | IDT_PRIVL(3)| IDT_INT_GATE32, GDT_KCODE);
+    set_idt_entry(&entries[INT_BREAK], isr3,  IDT_PRESENT | IDT_PRIVL(3)| IDT_TRAP_GATE32, GDT_KCODE);
     set_idt_entry(&entries[INT_OVERFLOW], isr4,  IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
     set_idt_entry(&entries[INT_BOUND], isr5,  IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
     set_idt_entry(&entries[INT_INVALID_OP], isr6,  IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
@@ -164,13 +160,6 @@ void idt_init(void)
 
     set_idt_entry(&entries[INT_SYSCALL], isr128, IDT_PRESENT | IDT_PRIVL(3) | IDT_INT_GATE32, GDT_KCODE);
 
-    set_idt_entry(&entries[IRQ_TIMER], isr32, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
-    set_idt_entry(&entries[IRQ_KBD], isr33, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
-    set_idt_entry(&entries[IRQ_SERIAL], isr36, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
-    set_idt_entry(&entries[IRQ_SPURIOUS], isr39, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
-    set_idt_entry(&entries[IRQ_IDE], isr46, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
-    set_idt_entry(&entries[IRQ_ERROR], isr51, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
-
     idt_init_percpu();
 }
 
@@ -187,10 +176,8 @@ void int_dispatch(struct int_frame *frame)
     switch (frame->int_no) {
     case IRQ_TIMER:
         /* Handle clock interrupts. Don't forget to acknowledge the interrupt
-         * using lapic_eoi() before calling the scheduler! lab 5
+         * using lapic_eoi() before calling the scheduler!
          */
-        lapic_eoi();
-        sched_yield();
         break;
     case IRQ_SPURIOUS:
         cprintf("Spurious interrupt on IRQ #7.\n");
@@ -236,18 +223,29 @@ void int_handler(struct int_frame *frame)
     cprintf("Interrupt: %s, %d\n", get_int_name(frame->int_no), frame->int_no);
     asm volatile("cld" ::: "cc");
 
+    /* Halt the CPU if some other CPU has called panic(). */
+    extern char *panicstr;
+
+    if (panicstr)
+        asm volatile("hlt");
+
+    /* Re-acqurie the big kernel lock if we were halted in sched_yield(). */
+    if (xchg(&thiscpu->cpu_status, CPU_STARTED) == CPU_HALTED)
+        lock_kernel();
+
     /* Check that interrupts are disabled.
      * If this assertion fails, DO NOT be tempted to fix it by inserting a "cli"
      * in the interrupt path.
      */
-    // Interrupts should be disabled since we dont want interrupts in interrupts
-    // So FLAGS_IF should be set to 0 here. lab 5 default code
     assert(!(read_rflags() & FLAGS_IF));
 
     cprintf("Incoming INT frame at %p\n", frame);
 
     if ((frame->cs & 3) == 3) {
         /* Interrupt from user mode. */
+        /* Acquire the big kernel lock before doing any serious kernel work.
+         * LAB 6: your code here. */
+        // lock_kernel(); // MATTHIJS: where to unlock? just before sched? or at end of function?
         assert(curenv);
 
         /* Garbage collect if current enviroment is a zombie. */
@@ -283,7 +281,6 @@ void page_fault_handler(struct int_frame *frame)
     int is_user = (frame->err_code & 4) == 4;           // User or kernel space
     int is_protection = (frame->err_code & 1) == 1;     // Protection or non-present page
     void *fault_va;
-    int is_cow;
 
     /* Read the CR2 register to find the faulting address. */
     fault_va = read_cr2();
@@ -291,40 +288,24 @@ void page_fault_handler(struct int_frame *frame)
     /* Handle kernel-mode page faults. */
     /* LAB 3: your code here. */
 
-    // Check protection violations for copy-on-write.
-    // Only destroy env if it wasnt a copy-on-write case
-    if (is_protection) {
-        cprintf("[PAGE_FAULT_HANDLER] check cow\n");
-        cprintf("is_write = %d\n", (frame->err_code & 2) == 2);
-        is_cow = cow(fault_va, fault_va_aligned, (frame->err_code & 2) == 2);
-        cprintf("[PAGE_FAULT_HANDLER] is_cow = %d - is_user = %d - is_userspace = %d\n", 
-                is_cow, is_user, fault_va_aligned < KERNEL_VMA);
-        if (is_cow) {
-            return;
-        }
-        cprintf("[PAGE_FAULT_HANDLER] not cow\n");
-    }
     // Kernel mode error
-    else if (!is_user) {
+    if (!is_user) {
         // Kernel tries to read user space, load user space page
         if (fault_va_aligned < KERNEL_VMA) {
-            cprintf("[PAGE_FAULT_HANDLER] kernel tries to read user space, loading page\n");
             if (page_fault_load_page((void *) fault_va_aligned)) {
-                cprintf("[PAGE_FAULT_HANDLER] page loaded\n");
                 return;
             }
         } else {
-            panic("Page fault in kernel mode - Kernel tries to read not mapped kernel space page: %llx\n", fault_va_aligned);
+            panic("Page fault in kernel mode - Kernel tries to read not mapped kernel space page\n");
         }
     }
-    /* We have already handled kernel-mode exceptions and protection violations,
-     * so if we get here, the page fault has happened in user mode.
+    /* We have already handled kernel-mode exceptions, so if we get here, the
+     * page fault has happened in user mode.
+     * Protection violations always lead to destruction of env
      */
-    else {
+    else if (!is_protection) {
         // Page is not loaded, search in vma and map it in page tables
-        cprintf("[PAGE_FAULT_HANDLER] loading page\n");
         if (page_fault_load_page((void *) fault_va_aligned)) {
-            cprintf("[PAGE_FAULT_HANDLER] page loaded\n");
             return;
         }
     }
@@ -334,63 +315,6 @@ void page_fault_handler(struct int_frame *frame)
         curenv->env_id, fault_va, frame->rip);
     print_int_frame(frame);
     env_destroy(curenv);
-}
-
-// Protection violation in page fault: check if cow must be used
-int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
-    cprintf("[PAGE_FAULT_HANDLER] -> COW start\n");
-    struct vma *vma;
-    struct page_info *new_page, *old_page;
-    physaddr_t *pt_entry = NULL;
-    int perm = PAGE_WRITE | PAGE_PRESENT;
-
-    // Get vma associated with faulting virt addr
-    vma = vma_lookup(curenv, (void *)fault_va_aligned);
-    cprintf("vma = %llx\n", vma);
-
-    // A regular protection fault, no cow
-    if (vma == NULL || !(vma->perm & PAGE_WRITE) || !is_write) {
-        return 0;
-    }
-
-    cprintf("[PAGE_FAULT_HANDLER] -> COW - cow detected\n");
-
-    old_page = page_lookup(curenv->env_pml4, (void *) fault_va_aligned, &pt_entry);
-
-    cprintf("cow 1\n");
-    if (*pt_entry & PAGE_USER) {
-        perm |= PAGE_USER;
-    }
-    if (*pt_entry & PAGE_NO_EXEC) {
-        perm |= PAGE_NO_EXEC;
-    }
-    if (*pt_entry & PAGE_HUGE) {
-        perm |= PAGE_HUGE;
-    }
-
-    if (*pt_entry & PAGE_WRITE) {
-        cprintf("[PAGE_FAULT_HANDLER] -> cow: ALREADY WRITABLE!!\n");
-    }
-
-    cprintf("cow 2\n");
-    cprintf("[PAGE_FAULT_HANDLER] -> cow pp_ref: %d\n", old_page->pp_ref);
-    // Only one environment owns this page, just change the permissions
-    if (old_page->pp_ref == 1) {
-        *pt_entry = page2pa(old_page) | perm;
-        cprintf("[PAGE_FAULT_HANDLER] -> cow - changing perms\n");
-    }
-    else {
-        new_page = page_alloc(ALLOC_ZERO);
-        memcpy((void *) KADDR(page2pa(new_page)), (void *) KADDR(page2pa(old_page)), PAGE_SIZE);
-        old_page->pp_ref--;
-        new_page->pp_ref++;
-        cprintf("[PAGE_FAULT_HANDLER] -> pp_ref | new = %d | old = %d\n", new_page->pp_ref, old_page->pp_ref);
-        *pt_entry = page2pa(new_page) | perm;
-        cprintf("[PAGE_FAULT_HANDLER] -> cow - copying and changing perms\n");
-    }
-
-    tlb_invalidate(curenv->env_pml4, (void *) fault_va_aligned);
-    return 1;
 }
 
 // Page fault has occured, load the page and map it

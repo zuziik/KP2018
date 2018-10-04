@@ -22,6 +22,7 @@ struct page_info *page_free_list;       /* Free list of physical pages */
  * Set up memory mappings above UTOP.
  ***************************************************************/
 
+static void mem_init_mp(void);
 static void boot_map_region(struct page_table *pml4, uintptr_t va, size_t size,
     physaddr_t pa, uint64_t perm);
 static void boot_map_kernel(struct elf *elf_hdr);
@@ -156,7 +157,7 @@ void mem_init(struct boot_info *boot_info)
 
     for (i = 0; i < NENV; i++) {
         vma_list = boot_alloc(sizeof(struct vma)*128);
-        envs[i].vma_array = vma_list;
+        envs[i].vma = vma_list;
     }
 
     /*********************************************************************
@@ -209,7 +210,7 @@ void mem_init(struct boot_info *boot_info)
 
     for (i = 0; i < NENV; i++) {
         boot_map_region(kern_pml4, USER_VMAS + (i)*vma_list_size, vma_list_size,
-            PADDR(envs[i].vma_array), PAGE_WRITE | PAGE_NO_EXEC);
+            PADDR(envs[i].vma), PAGE_WRITE | PAGE_NO_EXEC);
     }
 
     /*********************************************************************
@@ -227,15 +228,21 @@ void mem_init(struct boot_info *boot_info)
      * KSTACKTOP - KTSIZE leaving this as guard region.
      *
      * Your code goes here:
+     *
+     *
+     * LAB 6 Update:
+     * We now move to initializing kernel stacks in mem_init_mp().
+     * So, we must remove this bootstack initialization from here.
      */
-    uintptr_t vi;
-    boot_map_region(kern_pml4, KSTACK_TOP-KSTACK_SIZE, KSTACK_SIZE, 
-                    (physaddr_t)bootstack, PAGE_WRITE | PAGE_NO_EXEC);
+    // MATTHIJS: no longer needed, move this to mem_init_mp()
+    // uintptr_t vi;
+    // boot_map_region(kern_pml4, KSTACK_TOP-KSTACK_SIZE, KSTACK_SIZE, 
+    //                 (physaddr_t)bootstack, PAGE_WRITE | PAGE_NO_EXEC);
 
-    for (vi = KSTACK_TOP-KSTACK_SIZE-KSTACK_GAP; vi < KSTACK_TOP-KSTACK_SIZE; 
-         vi += PAGE_SIZE) {
-        page_walk(kern_pml4, (void *)vi, CREATE_NORMAL);
-    }
+    // for (vi = KSTACK_TOP-KSTACK_SIZE-KSTACK_GAP; vi < KSTACK_TOP-KSTACK_SIZE; 
+    //      vi += PAGE_SIZE) {
+    //     page_walk(kern_pml4, (void *)vi, CREATE_NORMAL);
+    // }
 
     /*********************************************************************
      * Map all of physical memory at KERNBASE.
@@ -248,14 +255,13 @@ void mem_init(struct boot_info *boot_info)
      */
     boot_map_kernel((struct elf *)(KERNEL_VMA + (uintptr_t)boot_info->elf_hdr));
 
+    /* Initialize the SMP-related parts of the memory map. */
+    mem_init_mp();
+
     /* Check that the initial page directory has been set up correctly. */
     cprintf("[CHECK_KERN_PML4] START - W3 ENV CHECK\n");
     check_kern_pml4();
     cprintf("[CHECK_KERN_PML4] END   - W3 ENV CHECK\n");
-
-    /* Enable the NX-bit. */
-    write_msr(MSR_EFER, MSR_EFER_NXE);
-
 
     /* Switch from the minimal entry page directory to the full kern_pml4
      * page table we just created.  Our instruction pointer should be
@@ -278,6 +284,52 @@ void mem_init(struct boot_info *boot_info)
 
     boot_map_region(kern_pml4, KERNEL_VMA, 0x100000000, 0, PAGE_WRITE);
     cprintf("[MEM_INIT] END\n");
+}
+
+/*
+ * Modify mappings in kern_pml4 to support SMP
+ *   - Map the per-CPU stacks in the region [KSTACKTOP-PTSIZE, KSTACKTOP)
+ */
+static void mem_init_mp(void)
+{
+    uintptr_t base;
+    size_t i;
+    uintptr_t vi;
+
+    /* Enable the NX-bit. */
+    /* LAB 6: your code here. */
+    write_msr(MSR_EFER, MSR_EFER_NXE);
+
+    /*
+     * Map per-CPU stacks starting at KSTACKTOP, for up to 'NCPU' CPUs.
+     *
+     * For CPU i, use the physical memory that 'percpu_kstacks[i]' refers
+     * to as its kernel stack. CPU i's kernel stack grows down from virtual
+     * address kstacktop_i = KSTACKTOP - i * (KSTACK_SIZE + KSTACK_GAP), and is
+     * divided into two pieces, just like the single stack you set up in
+     * mem_init:
+     *     * [kstacktop_i - KSTACK_SIZE, kstacktop_i)
+     *          -- backed by physical memory
+     *     * [kstacktop_i - (KSTACK_SIZE + KSTACK_GAP),
+     *          kstacktop_i - KSTACK_SIZE)
+     *          -- not backed; so if the kernel overflows its stack,
+     *             it will fault rather than overwrite another CPU's stack.
+     *             Known as a "guard page".
+     *     Permissions: kernel RW, user NONE
+     *
+     * LAB 6: your code here.
+     */
+    for (i = 0; i < NCPU; ++i) {
+        base = KSTACK_TOP - (KSTACK_SIZE + KSTACK_GAP) * (i + 1);
+
+        // Mapped by physical mem
+        boot_map_region(kern_pml4, base + KSTACK_GAP, KSTACK_SIZE, PADDR(percpu_kstacks[i]), PAGE_WRITE | PAGE_NO_EXEC);
+
+        // Page guard
+        for (vi = base; vi < base + KSTACK_GAP; vi += PAGE_SIZE) {
+            page_walk(kern_pml4, (void *)vi, CREATE_NORMAL);
+        }
+    }
 }
 
 /***************************************************************
@@ -318,9 +370,16 @@ void page_init(struct boot_info *boot_info)
      *  3) The boot loader also loaded in the ELF header structures of the
      *     kernel. We have to preserve these headers until we have set up the
      *     right permissions in the page tables.
+     *  4) The physical page that hosts the entry point for to boot the other
+     *     processor cores.
      * Change the code to reflect this.
      * NB: DO NOT actually touch the physical memory corresponding to free
      *     pages! */
+
+    /*
+     * LAB 6: change your code to mark the physical page at MPENTRY_PADDR as
+     * used.
+     */
     entry = (struct mmap_entry *)KADDR(boot_info->mmap_addr);
     end = PADDR(boot_alloc(0));
 
@@ -334,7 +393,8 @@ void page_init(struct boot_info *boot_info)
 
             if (!(pa == 0 || pa == MPENTRY_PADDR || 
                  (pa >= KERNEL_LMA && pa < end) ||
-                  pa == PADDR(elf_hdr))) {
+                  pa == PADDR(elf_hdr) ||
+                  pa == MPENTRY_PADDR)) {
                 page->is_available = 1;
 
                 // Set next and previous
@@ -803,11 +863,8 @@ void page_remove(struct page_table *pml4, void *va)
 void tlb_invalidate(struct page_table *pml4, void *va)
 {
     /* Flush the entry only if we're modifying the current address space. */
-    // cprintf("curent: %llx\n", curenv);
-    if ((!curenv) || (curenv->env_pml4 == pml4)) {
-        cprintf("[PAGE_FAULT_HANDLER] -> flushing page\n");
+    if (!curenv || curenv->env_pml4 == pml4)
         flush_page(va);
-    }
 }
 
 /*
@@ -858,6 +915,7 @@ void *mmio_map_region(physaddr_t pa, size_t size)
     base += size;
     return (void *) base - size;
 }
+
 
 static uintptr_t user_mem_check_addr;
 
@@ -1160,10 +1218,23 @@ static void check_kern_pml4(void)
         assert(check_va2pa(pml4, KERNEL_VMA + i) == i);
 
     /* check kernel stack */
-    for (i = 0; i < KSTACK_SIZE; i += PAGE_SIZE)
-        assert(check_va2pa(pml4, KSTACK_TOP - KSTACK_SIZE + i) == 
-            (physaddr_t)bootstack + i);
-    assert(check_va2pa(pml4, KSTACK_TOP - KSTACK_SIZE - PAGE_SIZE) == ~0);
+    for (n = 0; n < NCPU; ++n) {
+        uintptr_t base = KSTACK_TOP - (KSTACK_SIZE + KSTACK_GAP) * (n + 1);
+
+        for (i = 0; i < KSTACK_SIZE; i += PAGE_SIZE) {
+            assert(check_va2pa(pml4, base + KSTACK_GAP + i) ==
+                PADDR(percpu_kstacks[n]) + i);
+        }
+
+        for (i = 0; i < KSTACK_GAP; i += PAGE_SIZE) {
+            assert(check_va2pa(pml4, base + i) == ~0);
+        }
+    }
+    // MATTHIJS: removed in lab 6, for loop above is new part
+    // for (i = 0; i < KSTACK_SIZE; i += PAGE_SIZE)
+    //     assert(check_va2pa(pml4, KSTACK_TOP - KSTACK_SIZE + i) == 
+    //         (physaddr_t)bootstack + i);
+    // assert(check_va2pa(pml4, KSTACK_TOP - KSTACK_SIZE - PAGE_SIZE) == ~0);
 
     /* check PML permissions */
     for (i = 0; i < PAGE_TABLE_ENTRIES; i++) {

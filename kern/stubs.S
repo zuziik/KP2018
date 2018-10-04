@@ -40,17 +40,8 @@ ISR_NOERRCODE INT_MCE
 ISR_NOERRCODE INT_SIMD
 ISR_NOERRCODE INT_SYSCALL
 
-# lab 5, also see idt.c for new idt entries
-ISR_ERRCODE IRQ_TIMER
-ISR_ERRCODE IRQ_KBD
-ISR_ERRCODE IRQ_SERIAL 
-ISR_ERRCODE IRQ_SPURIOUS
-ISR_ERRCODE IRQ_IDE
-ISR_ERRCODE IRQ_ERROR
-
 isr_common_stub:
     /* LAB 3: your code here. */
-    # cli # clear interrupt flag, lab 5 - not needed if we use INT_TRAP for everything (plus, if we wanted to use something else, it wouldn't work)
 
     pushq %rax
     pushq %rcx
@@ -82,6 +73,7 @@ isr_common_stub:
 
     movq %rsp, %rdi
     jmp int_handler
+
 
 .global syscall64
 syscall64:
@@ -129,4 +121,6 @@ iret64:
 .global sysret64
 sysret64:
     /* LAB 3: your code here. */
+
+
     sysretq

@@ -150,6 +150,7 @@ struct vma *vma_insert(struct env *env, int type, void *mem_va, size_t mem_size,
     return NULL;
 }
 
+// MATTHIJS: Something can go wrong if forgot some mem you shouldnt use
 // Find a free piece of virt mem of size size
 // assumes size to be aligned
 // returns -1 if there is no free slot or no contiguous region

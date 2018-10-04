@@ -80,10 +80,13 @@ void lapic_init(void)
      *
      * For now, just use lapic_get_base() to set lapicaddr. Later on, we will
      * parse the ACPI tables to get this.
+     *
+     * LAB 6: we now parse the MADT to get the local APIC base address, so we
+     * don't need to read the MSR anymore. Remove the code from the previous
+     * lab.
      */
 
     /* LAB 5: your code here. */
-    lapicaddr = lapic_get_base();                  
     if (!lapicaddr)
         return;
 

@@ -35,6 +35,12 @@ KERN_SRCFILES += \
 	kern/lapic.c \
 	kern/sched.c
 
+# Source files for LAB 6.
+KERN_SRCFILES += \
+	kern/boot_ap.S \
+	kern/acpi.c \
+	kern/spinlock.c
+
 # Only build files if they exist.
 KERN_SRCFILES := $(wildcard $(KERN_SRCFILES))
 
@@ -65,6 +71,11 @@ KERN_BINFILES += \
 	user/idle \
 	user/spin \
 	user/yield
+
+# Binary files for LAB 6.
+KERN_BINFILES += \
+	user/mcorefork \
+	user/stresssched
 
 KERN_OBJFILES := $(patsubst %.c, $(OBJDIR)/%.o, $(KERN_SRCFILES))
 KERN_OBJFILES := $(patsubst %.S, $(OBJDIR)/%.o, $(KERN_OBJFILES))

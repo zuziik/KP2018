@@ -15,6 +15,9 @@
 #include <inc/x86-64/gdt.h>
 #include <inc/x86-64/memory.h>
 
+/* Maximum number of CPUs */
+#define NCPU  8
+
 /* Values of status in struct cpuinfo */
 enum {
     CPU_UNUSED = 0,
@@ -30,8 +33,19 @@ struct cpuinfo {
     struct tss cpu_tss;            /* Used by x86 to find stack for interrupt */
 };
 
-extern struct cpuinfo *thiscpu;
+/* Initialized in cpu.c */
+extern struct cpuinfo cpus[NCPU];
+extern int ncpu;                   /* Total number of CPUs in the system */
+extern struct cpuinfo *bootcpu;    /* The boot-strap processor (BSP) */
+extern physaddr_t lapicaddr;       /* Physical MMIO address of the local APIC */
 
+/* Per-CPU kernel stacks */
+extern unsigned char percpu_kstacks[NCPU][KSTACK_SIZE];
+
+int cpunum(void);
+#define thiscpu (&cpus[cpunum()])
+
+void mp_init(void);
 void lapic_init(void);
 void lapic_startap(uint8_t apicid, uint32_t addr);
 void lapic_eoi(void);

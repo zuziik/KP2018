@@ -7,79 +7,16 @@
 #include <kern/env.h>
 #include <kern/pmap.h>
 #include <kern/monitor.h>
+#include <kern/spinlock.h>
 
 void sched_halt(void);
-
-// Return the index of env in the envs list
-int get_env_index(envid_t env_id) {
-    int i;
-    for (i = 0; i < NENV; i++) {
-        if ((&envs[i])->env_id == env_id) {
-            return i;
-        }
-    }
-
-    return -1;
-}
-
-// Reset the pause variable for each env which was waiting on the env with env_id
-void reset_pause(envid_t env_id) {
-    int i;
-    for (i = 0; i++; i < NENV) {
-        if ((&envs[i])->pause == env_id) {
-            (&envs[i])->pause = -1;
-        }
-    }
-}
 
 /*
  * Choose a user environment to run and run it.
  */
 void sched_yield(void)
 {
-    cprintf("[SCHED_YIELD] start\n\n");
-    struct env *env = NULL;
-    int curenv_i, i;
-    int64_t time = read_tsc();
-    int64_t diff;
-
-    // Just destroyed the previous current env
-    if (curenv == NULL) {
-        curenv_i = get_env_index(env_free_list->env_id);
-
-        // Curenv just finished so reset the envs which were paused
-        reset_pause(env_free_list->env_id);
-    } else {
-        // curenv just ran succesfully
-        curenv_i = get_env_index(curenv->env_id);
-
-        // Update timeslice of curenv
-        if (time >= curenv->prev_time)   
-            diff =  time - curenv->prev_time;
-        else
-            diff = time - curenv->prev_time + 0x100000000;
-
-        if (curenv->timeslice > diff) {
-            curenv->timeslice -= diff;
-            curenv->prev_time = time;
-
-            // If env is still running and timeslice is not 0, continue executing
-            if (curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
-                env_run(curenv);
-                sched_halt();
-                return;
-            }         
-            
-        }
-        else {
-            curenv->timeslice = 0;
-            curenv->prev_time = time;
-        }
-
-    }
-
-    // Corner case: curenv is last env so go circular
-    i = (curenv_i + 1) % NENV;
+    struct env *idle;
 
     /*
      * Implement simple round-robin scheduling.
@@ -100,33 +37,6 @@ void sched_yield(void)
      *
      * LAB 5: Your code here.
      */
-
-    // Search for the first runnable env after curenv
-    while (i != curenv_i) {
-        // Found a different runnable env
-        if (&envs[i] != NULL && (&envs[i])->env_status == ENV_RUNNABLE && (&envs[i])->pause < 0) {
-            env = &envs[i];
-            break;
-        }
-
-        // Reached the end, go circular to 0
-        i = (i + 1) % NENV;
-    }
-
-    // No runnable envs found, use current if running or runnable
-    if (i == curenv_i && curenv != NULL && curenv->pause < 0 &&
-        (curenv->env_status == ENV_RUNNING || curenv->env_status == ENV_RUNNABLE)) {
-        cprintf("[AAA] use curenv\n");
-        env = curenv;
-    }
-
-    // Run the env
-    if (env != NULL) {
-        cprintf("[AAA] [CCC] new - %d\n", env->env_id);
-        env->timeslice = 100000000;
-        env->prev_time = time;
-        env_run(env);
-    }
 
     /* sched_halt() never returns */
     sched_halt();
@@ -151,7 +61,6 @@ void sched_halt(void)
 
     if (i == NENV) {
         cprintf("No runnable environments in the system!\n");
-        cprintf("Destroyed the only environment - nothing more to do!\n");
         while (1)
             monitor(NULL);
     }
@@ -159,6 +68,14 @@ void sched_halt(void)
     /* Mark that no environment is running on this CPU */
     curenv = NULL;
     load_pml4((struct page_table *)PADDR(kern_pml4));
+
+    /* Mark that this CPU is in the HALT state, so that when
+     * timer interupts come in, we know we should re-acquire the
+     * big kernel lock */
+    xchg(&thiscpu->cpu_status, CPU_HALTED);
+
+    /* Release the big kernel lock as if we were "leaving" the kernel */
+    unlock_kernel();
 
     /* Reset stack pointer, enable interrupts and then halt. */
     asm volatile(
@@ -170,3 +87,4 @@ void sched_halt(void)
         "hlt\n"
         :: "a" (thiscpu->cpu_tss.rsp[0]));
 }
+

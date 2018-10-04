@@ -14,12 +14,13 @@
 #include <kern/pmap.h>
 #include <kern/monitor.h>
 #include <kern/sched.h>
+#include <kern/spinlock.h>
 #include <kern/syscall.h>
 
 #include <kern/vma.h>
 
 struct env *envs = NULL;            /* All environments */
-struct env *env_free_list;          /* Free environment list */            
+static struct env *env_free_list;   /* Free environment list */
                                     /* (linked by env->env_link) */
 
 #define ENVGENSHIFT 12      /* >= LOGNENV */
@@ -37,6 +38,8 @@ struct env *env_free_list;          /* Free environment list */
 int envid2env(envid_t envid, struct env **env_store, bool checkperm)
 {
     struct env *e;
+
+    assert_lock_env();
 
     /* If envid is zero, return the current environment. */
     if (envid == 0) {
@@ -168,7 +171,7 @@ static int env_setup_vm(struct env *e)
 // Init all the values in the vma structure
 static int env_setup_vma(struct env *e) {
     cprintf("[ENV SETUP VMA] start\n");
-    struct vma *vma_list = e->vma_array;
+    struct vma *vma_list = e->vma;
     int j;
 
     for (j = 0; j < 128; j++) {
@@ -184,7 +187,6 @@ static int env_setup_vma(struct env *e) {
         vma_list[j].prev = (j == 0) ? NULL : &vma_list[j-1];
     }
 
-    e->vma = vma_list;
     cprintf("[ENV SETUP VMA] end\n");
     return 0;
 }
@@ -227,10 +229,6 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     e->env_status = ENV_RUNNABLE;
     e->env_runs = 0;
 
-    e->timeslice = 100000000;
-    e->prev_time = 0;
-    e->pause = -1;
-
     /*
      * Clear out all the saved register state, to prevent the register values of
      * a prior environment inhabiting this env structure from "leaking" into our
@@ -256,10 +254,6 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
 
     /* Enable interrupts while in user mode.
      * LAB 5: your code here. */
-    // FLAGS_IF: if 0, interrupts are disabled, if 1, interrupts are enabled
-    if (!(read_rflags() & FLAGS_IF)) {
-        e->env_frame.rflags |= FLAGS_IF;
-    }
 
     /* Commit the allocation */
     env_free_list = e->env_link;
@@ -397,12 +391,12 @@ static void load_icode(struct env *e, uint8_t *binary)
     /* Now map one page for the program's initial stack at virtual address
      * USTACKTOP - PGSIZE. */
 
-    // /* LAB 3: your code here. */
-    // struct page_info *p = NULL;
+    /* LAB 3: your code here. */
+    struct page_info *p = NULL;
 
-    //  Allocate a page for the page directory 
-    // if (!(p = page_alloc(0)))
-    //     panic("Couldn't allocate memory for environment initial stack");
+    /* Allocate a page for the page directory */
+    if (!(p = page_alloc(0)))
+        panic("Couldn't allocate memory for environment initial stack");
 
     // Create a Vma for the user stack
     vma_insert(e, VMA_ANON, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_SIZE, 
@@ -451,6 +445,7 @@ void env_create(uint8_t *binary, enum env_type type)
         panic("Error in env_alloc");
     }
     cprintf("[ENV CREATE] end\n");
+
 }
 
 void env_free_page_tables(struct page_table *page_table, size_t depth)
@@ -459,9 +454,7 @@ void env_free_page_tables(struct page_table *page_table, size_t depth)
     physaddr_t *entry;
     size_t i, max;
 
-    // Commented line was in default framework but wrong, next line is correct
-    // max = (depth == 3) ? PML4_INDEX(KERNEL_VMA) : PAGE_TABLE_ENTRIES;
-    max = (depth == 3) ? PML4_INDEX(USER_TOP) : PAGE_TABLE_ENTRIES;
+    max = (depth == 3) ? PML4_INDEX(KERNEL_VMA) : PAGE_TABLE_ENTRIES;
 
     /* Iterate the entries in the page table to free them. */
     for (i = 0; i < max; ++i) {
@@ -519,6 +512,8 @@ void env_free(struct env *e)
  */
 void env_destroy(struct env *e)
 {
+    assert_lock_env();
+
     /* If e is currently running on other CPUs, we change its state to
      * ENV_DYING. A zombie environment will be freed the next time
      * it traps to the kernel. */
@@ -543,6 +538,9 @@ void env_destroy(struct env *e)
  */
 void env_pop_frame(struct int_frame *frame)
 {
+    /* Record the CPU we are running on for user-space debugging */
+    curenv->env_cpunum = cpunum();
+
     switch (frame->int_no) {
 #ifdef LAB3_SYSCALL
     case 0x80: sysret64(frame); break;
@@ -592,11 +590,6 @@ void env_run(struct env *e)
     curenv = e;
     curenv->env_status = ENV_RUNNING;
     curenv->env_runs += 1;
-
-    // First run env, is not initialized correct yet
-    if (curenv->prev_time == 0) {
-        curenv->prev_time = read_tsc();
-    }
 
     load_pml4((void *)PADDR(curenv->env_pml4));
     env_pop_frame(&curenv->env_frame);
