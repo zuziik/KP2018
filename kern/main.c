@@ -11,6 +11,8 @@
 #include <inc/stdio.h>
 #include <inc/string.h>
 
+#include <kern/spinlock.h>
+
 static void boot_aps(void);
 
 void kmain(struct boot_info *boot_info)
@@ -43,8 +45,7 @@ void kmain(struct boot_info *boot_info)
 
     /* Acquire the big kernel lock before waking up APs.
      * LAB 6: your code here. */
-    // MATTHIJS: When to unlock kernel? after boot_aps or after env?
-    // lock_kernel();
+    lock_kernel();
 
     /* Starting non-boot CPUs */
     boot_aps();
@@ -52,10 +53,16 @@ void kmain(struct boot_info *boot_info)
 #if defined(TEST)
     /* Don't touch -- used by grading script! */
     ENV_CREATE(TEST, ENV_TYPE_USER);
+    ENV_CREATE(user_divzero, ENV_TYPE_USER);
+    ENV_CREATE(user_divzero, ENV_TYPE_USER);
 #else
     /* Touch all you want. */
     ENV_CREATE(user_divzero, ENV_TYPE_USER);
+    ENV_CREATE(user_divzero, ENV_TYPE_USER);
+    ENV_CREATE(user_divzero, ENV_TYPE_USER);
 #endif
+
+    unlock_kernel(); // MATTHIJS: When to unlock kernel? I dont know!
 
     /* We only have one user environment for now, so just run it. */
     env_run(&envs[0]);
@@ -120,6 +127,7 @@ void mp_main(void)
      * only one CPU can enter the scheduler at a time!
      *
      * LAB 6: your code here.
+     * MATTHIJS: TODO
      */
 
     /* Remove this after you finish the per-CPU initialization code. */

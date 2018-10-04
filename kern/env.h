@@ -4,6 +4,7 @@
 #include <kern/cpu.h>
 
 extern struct env *envs;        /* All environments */
+extern struct env *env_free_list;      /* Free environment list */
 extern struct env *curenv;      /* Current environment */
 #define curenv (thiscpu->cpu_env)   /* Current environment */
 

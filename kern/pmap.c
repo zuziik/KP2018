@@ -157,7 +157,7 @@ void mem_init(struct boot_info *boot_info)
 
     for (i = 0; i < NENV; i++) {
         vma_list = boot_alloc(sizeof(struct vma)*128);
-        envs[i].vma = vma_list;
+        envs[i].vma_array = vma_list;
     }
 
     /*********************************************************************
@@ -210,7 +210,7 @@ void mem_init(struct boot_info *boot_info)
 
     for (i = 0; i < NENV; i++) {
         boot_map_region(kern_pml4, USER_VMAS + (i)*vma_list_size, vma_list_size,
-            PADDR(envs[i].vma), PAGE_WRITE | PAGE_NO_EXEC);
+            PADDR(envs[i].vma_array), PAGE_WRITE | PAGE_NO_EXEC);
     }
 
     /*********************************************************************
@@ -234,7 +234,6 @@ void mem_init(struct boot_info *boot_info)
      * We now move to initializing kernel stacks in mem_init_mp().
      * So, we must remove this bootstack initialization from here.
      */
-    // MATTHIJS: no longer needed, move this to mem_init_mp()
     // uintptr_t vi;
     // boot_map_region(kern_pml4, KSTACK_TOP-KSTACK_SIZE, KSTACK_SIZE, 
     //                 (physaddr_t)bootstack, PAGE_WRITE | PAGE_NO_EXEC);
@@ -331,6 +330,7 @@ static void mem_init_mp(void)
         }
     }
 }
+
 
 /***************************************************************
  * Tracking of physical pages.
@@ -863,8 +863,11 @@ void page_remove(struct page_table *pml4, void *va)
 void tlb_invalidate(struct page_table *pml4, void *va)
 {
     /* Flush the entry only if we're modifying the current address space. */
-    if (!curenv || curenv->env_pml4 == pml4)
+    // cprintf("curent: %llx\n", curenv);
+    if ((!curenv) || (curenv->env_pml4 == pml4)) {
+        cprintf("[PAGE_FAULT_HANDLER] -> flushing page\n");
         flush_page(va);
+    }
 }
 
 /*
@@ -915,7 +918,6 @@ void *mmio_map_region(physaddr_t pa, size_t size)
     base += size;
     return (void *) base - size;
 }
-
 
 static uintptr_t user_mem_check_addr;
 

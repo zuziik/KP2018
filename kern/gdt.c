@@ -34,9 +34,9 @@ void gdt_init_percpu(void)
      *
      * LAB 6: your code here.
      */
-    // Matthijs: see pmap.c, mem_init_mp?
-    // This code was already here during lab 3 at least
-    thiscpu->cpu_tss.rsp[0] = KSTACK_TOP;
+    // thiscpu->cpu_tss.rsp[0] = KSTACK_TOP;        // lab 3 code
+    // see pmap.c, mem_init_mp for explanation
+    thiscpu->cpu_tss.rsp[0] = KSTACK_TOP - i * (KSTACK_SIZE + KSTACK_GAP);
 
     /*
      * The code below has been updated to set up a per-CPU TSS, load the GDT

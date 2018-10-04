@@ -8,5 +8,6 @@
 
 /* This function does not return. */
 void sched_yield(void) __attribute__((noreturn));
+int get_env_index(envid_t env_id);
 
 #endif  /* !JOS_KERN_SCHED_H */
