@@ -804,10 +804,10 @@ void tlb_invalidate(struct page_table *pml4, void *va)
 {
     /* Flush the entry only if we're modifying the current address space. */
     // cprintf("curent: %llx\n", curenv);
-    // if (!curenv)
+    if ((!curenv) || (curenv->env_pml4 == pml4)) {
+        cprintf("[PAGE_FAULT_HANDLER] -> flushing page\n");
         flush_page(va);
-    // else if (curenv->env_pml4 == pml4)
-    //     flush_page(va);
+    }
 }
 
 /*

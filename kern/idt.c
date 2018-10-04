@@ -302,16 +302,19 @@ void page_fault_handler(struct int_frame *frame)
         if (is_cow) {
             return;
         }
+        cprintf("[PAGE_FAULT_HANDLER] not cow\n");
     }
     // Kernel mode error
     else if (!is_user) {
         // Kernel tries to read user space, load user space page
         if (fault_va_aligned < KERNEL_VMA) {
+            cprintf("[PAGE_FAULT_HANDLER] kernel tries to read user space, loading page\n");
             if (page_fault_load_page((void *) fault_va_aligned)) {
+                cprintf("[PAGE_FAULT_HANDLER] page loaded\n");
                 return;
             }
         } else {
-            panic("Page fault in kernel mode - Kernel tries to read not mapped kernel space page\n");
+            panic("Page fault in kernel mode - Kernel tries to read not mapped kernel space page: %llx\n", fault_va_aligned);
         }
     }
     /* We have already handled kernel-mode exceptions and protection violations,
@@ -319,7 +322,9 @@ void page_fault_handler(struct int_frame *frame)
      */
     else {
         // Page is not loaded, search in vma and map it in page tables
+        cprintf("[PAGE_FAULT_HANDLER] loading page\n");
         if (page_fault_load_page((void *) fault_va_aligned)) {
+            cprintf("[PAGE_FAULT_HANDLER] page loaded\n");
             return;
         }
     }
@@ -333,7 +338,7 @@ void page_fault_handler(struct int_frame *frame)
 
 // Protection violation in page fault: check if cow must be used
 int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
-    cprintf("COW start\n");
+    cprintf("[PAGE_FAULT_HANDLER] -> COW start\n");
     struct vma *vma;
     struct page_info *new_page, *old_page;
     physaddr_t *pt_entry = NULL;
@@ -348,7 +353,7 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
         return 0;
     }
 
-    cprintf("COW - cow detected\n");
+    cprintf("[PAGE_FAULT_HANDLER] -> COW - cow detected\n");
 
     old_page = page_lookup(curenv->env_pml4, (void *) fault_va_aligned, &pt_entry);
 
@@ -364,25 +369,24 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
     }
 
     if (*pt_entry & PAGE_WRITE) {
-        cprintf("cow: ALREADY WRITABLE!!\n");
+        cprintf("[PAGE_FAULT_HANDLER] -> cow: ALREADY WRITABLE!!\n");
     }
 
     cprintf("cow 2\n");
-    cprintf("cow pp_ref: %d\n", old_page->pp_ref);
+    cprintf("[PAGE_FAULT_HANDLER] -> cow pp_ref: %d\n", old_page->pp_ref);
     // Only one environment owns this page, just change the permissions
     if (old_page->pp_ref == 1) {
         *pt_entry = page2pa(old_page) | perm;
-        cprintf("cow 3a\n");
+        cprintf("[PAGE_FAULT_HANDLER] -> cow - changing perms\n");
     }
     else {
         new_page = page_alloc(ALLOC_ZERO);
-        memcpy((void *) new_page, (void *) old_page, PAGE_SIZE);
-        old_page->pp_ref -= 1;
-        new_page->pp_ref = 1;
-        cprintf("pp_ref | new = %d | old = %d\n", new_page->pp_ref, old_page->pp_ref);
-
+        memcpy((void *) KADDR(page2pa(new_page)), (void *) KADDR(page2pa(old_page)), PAGE_SIZE);
+        old_page->pp_ref--;
+        new_page->pp_ref++;
+        cprintf("[PAGE_FAULT_HANDLER] -> pp_ref | new = %d | old = %d\n", new_page->pp_ref, old_page->pp_ref);
         *pt_entry = page2pa(new_page) | perm;
-        cprintf("cow 3b\n");
+        cprintf("[PAGE_FAULT_HANDLER] -> cow - copying and changing perms\n");
     }
 
     tlb_invalidate(curenv->env_pml4, (void *) fault_va_aligned);

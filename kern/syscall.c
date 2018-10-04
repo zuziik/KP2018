@@ -222,19 +222,20 @@ void enforce_cow(struct page_table *pml4) {
     size_t s, t, u, v;
 
     // Loop through pml4 entries
+    // for (s = 0; s < PAGE_TABLE_ENTRIES; ++s) {
     for (s = 0; s < PML4_INDEX(USER_TOP); ++s) {
         if (!(pml4->entries[s] & PAGE_PRESENT))
             continue;
 
         // Loop through pdp entries
         pdpt = (void *)(KERNEL_VMA + PAGE_ADDR(pml4->entries[s]));
-        for (t = 0; t < PML4_INDEX(USER_TOP); ++t) {
+        for (t = 0; t < PAGE_TABLE_ENTRIES; ++t) {
             if (!(pdpt->entries[t] & PAGE_PRESENT))
                 continue;
 
             // Loop through pd entries
             pgdir = (void *)(KERNEL_VMA + PAGE_ADDR(pdpt->entries[t]));
-            for (u = 0; u < PML4_INDEX(USER_TOP); ++u) {
+            for (u = 0; u < PAGE_TABLE_ENTRIES; ++u) {
                 if (!(pgdir->entries[u] & PAGE_PRESENT))
                     continue;
 
@@ -247,7 +248,7 @@ void enforce_cow(struct page_table *pml4) {
 
                 // Loop through page table
                 pt = (void *)(KERNEL_VMA + PAGE_ADDR(pgdir->entries[u]));
-                for (v = 0; v < PML4_INDEX(USER_TOP); ++v) {
+                for (v = 0; v < PAGE_TABLE_ENTRIES; ++v) {
                     if (!(pt->entries[v] & PAGE_PRESENT))
                         continue;
 
@@ -312,8 +313,7 @@ int alloc_table(struct page_table *old, struct page_table *new, size_t index) {
     }
 
     // Set the page
-    // p->pp_ref++;
-    p->pp_ref = 1;
+    p->pp_ref++;
     new->entries[index] = page2pa(p) | perm;
     return 0;
 }
@@ -331,11 +331,12 @@ int copy_pml4(struct env *old, struct env *new) {
     struct page_table *pml4_old = old->env_pml4;
 
     for (s = PML4_INDEX(USER_TOP); s < PAGE_TABLE_ENTRIES; s++) {
-        pml4_new->entries[s] = kern_pml4->entries[s];
+        pml4_new->entries[s] = pml4_old->entries[s];
     }
 
     // Loop through pml4 entries
     for (s = 0; s < PML4_INDEX(USER_TOP); ++s) {
+    // for (s = 0; s < PAGE_TABLE_ENTRIES; ++s) {
         if (!(pml4_old->entries[s] & PAGE_PRESENT)) 
             continue;
 
@@ -347,7 +348,7 @@ int copy_pml4(struct env *old, struct env *new) {
         // Loop through pdp entries
         pdpt_old = (struct page_table *) KADDR(PAGE_ADDR(pml4_old->entries[s]));
         pdpt_new = (struct page_table *) KADDR(PAGE_ADDR(pml4_new->entries[s]));
-        for (t = 0; t < PML4_INDEX(USER_TOP); ++t) {
+        for (t = 0; t < PAGE_TABLE_ENTRIES; ++t) {
             if (!(pdpt_old->entries[t] & PAGE_PRESENT))
                 continue;
 
@@ -358,7 +359,7 @@ int copy_pml4(struct env *old, struct env *new) {
             // Loop through pd entries
             pgdir_old = (struct page_table *) KADDR(PAGE_ADDR(pdpt_old->entries[t]));
             pgdir_new = (struct page_table *) KADDR(PAGE_ADDR(pdpt_new->entries[t]));
-            for (u = 0; u < PML4_INDEX(USER_TOP); ++u) {
+            for (u = 0; u < PAGE_TABLE_ENTRIES; ++u) {
                 if (!(pgdir_old->entries[u] & PAGE_PRESENT))
                     continue;
 
@@ -379,15 +380,12 @@ int copy_pml4(struct env *old, struct env *new) {
                 // Loop through page table
                 pt_old = (struct page_table *) KADDR(PAGE_ADDR(pgdir_old->entries[u]));
                 pt_new = (struct page_table *) KADDR(PAGE_ADDR(pgdir_new->entries[u]));
-                for (v = 0; v < PML4_INDEX(USER_TOP); ++v) {
+                for (v = 0; v < PAGE_TABLE_ENTRIES; ++v) {
                     if (!(pt_old->entries[v] & PAGE_PRESENT))
                         continue;
 
                     // don't copy the page, just increase refcount on physical page
                     pt_new->entries[v] = pt_old->entries[v];  
-                    cprintf("[2]phys_addr = %llx - %llx\n", 
-                        pt_old->entries[v],
-                        PAGE_ADDR(pt_old->entries[v]));
                     page = pa2page(PAGE_ADDR(pt_old->entries[v]));
                     page->pp_ref++;       
                 }
@@ -475,7 +473,7 @@ static int sys_fork(void)
 
     // Copy the state
     memcpy((void *) &(new_env->env_frame), (void *) &(curenv->env_frame), 
-           sizeof(curenv->env_frame));
+           sizeof(struct int_frame));
 
     cprintf("[SYS_FORK] rflags old: %d - new: %d\n", 
             (curenv->env_frame).rflags, (new_env->env_frame).rflags);
