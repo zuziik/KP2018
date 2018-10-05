@@ -38,11 +38,9 @@ void reset_pause(envid_t env_id) {
  */
 void sched_yield(void)
 {
-    if (!holding(&kernel_lock)) {
-        cprintf("[SCHED_YIELD] lock kernel start\n");
-        lock_kernel();
-        cprintf("[SCHED_YIELD] lock kernel finish\n");
-    }
+    cprintf("[SCHED_YIELD] lock sched start\n");
+    lock_scheduler();
+    cprintf("[SCHED_YIELD] lock sched finish\n");
 
     cprintf("[SCHED_YIELD] start\n\n");
     struct env *env = NULL;
@@ -64,7 +62,7 @@ void sched_yield(void)
         if (time >= curenv->prev_time)   
             diff =  time - curenv->prev_time;
         else
-            diff = time - curenv->prev_time + 0x100000000;
+            diff = time - curenv->prev_time + 0x5000000000;
 
         if (curenv->timeslice > diff) {
             curenv->timeslice -= diff;
@@ -72,6 +70,10 @@ void sched_yield(void)
 
             // If env is still running and timeslice is not 0, continue executing
             if (curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
+                cprintf("[SCHED_YIELD 0] unlock sched start\n");
+                unlock_scheduler();
+                cprintf("[SCHED_YIELD 0] unlock sched finish\n");
+
                 env_run(curenv);
                 return;
             }
@@ -80,7 +82,6 @@ void sched_yield(void)
             curenv->timeslice = 0;
             curenv->prev_time = time;
         }
-
     }
 
     // Corner case: curenv is last env so go circular
@@ -128,8 +129,13 @@ void sched_yield(void)
     // Run the env
     if (env != NULL) {
         cprintf("[AAA] [CCC] new - %d\n", env->env_id);
-        env->timeslice = 1000000000;
+        env->timeslice = 5000000000;
         env->prev_time = time;
+
+        cprintf("[SCHED_YIELD 1] unlock sched start\n");
+        unlock_scheduler();
+        cprintf("[SCHED_YIELD 1] unlock sched finish\n");
+
         env_run(env);
         return;
     }
@@ -172,9 +178,9 @@ void sched_halt(void)
     xchg(&thiscpu->cpu_status, CPU_HALTED);
 
     /* Release the big kernel lock as if we were "leaving" the kernel */
-    cprintf("[SCHED_HALT] unlock kernel start\n");
-    unlock_kernel();
-    cprintf("[SCHED_HALT] unlock kernel finish\n");
+    cprintf("[SCHED_HALT] unlock sched start\n");
+    unlock_scheduler();
+    cprintf("[SCHED_HALT] unlock sched finish\n");
 
     /* Reset stack pointer, enable interrupts and then halt. */
     asm volatile(

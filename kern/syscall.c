@@ -15,6 +15,7 @@
 #include <kern/console.h>
 
 #include <kern/vma.h>
+#include <kern/spinlock.h>
 
 extern void syscall64(void);
 
@@ -195,6 +196,9 @@ static int sys_vma_destroy(void *va, size_t size)
  */
 static void sys_yield(void)
 {
+    if (holding(&kernel_lock)) {
+        panic("[4]\n");
+    }
     sched_yield();
 }
 
@@ -210,6 +214,9 @@ static int sys_wait(envid_t envid)
     
     // Let curenv wait and reschedule immediately
     curenv->pause = envid;
+    if (holding(&kernel_lock)) {
+        panic("[5]\n");
+    }
     sched_yield();
     panic("[SYS_WAIT] sched_yield does return (remove this panic eventually)\n");
     return 0;

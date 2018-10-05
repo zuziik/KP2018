@@ -9,6 +9,31 @@
 #include <kern/cpu.h>
 #include <kern/spinlock.h>
 
+// #ifdef USE_BIG_KERNEL_LOCK
+// /* The big kernel lock */
+// struct spinlock kernel_lock = {
+// #ifdef DEBUG_SPINLOCK
+//     .name = "kernel_lock"
+// #endif
+// };
+// #else
+// struct spinlock pagealloc_lock = {
+// #ifdef DEBUG_SPINLOCK
+//     .name = "pagealloc_lock"
+// #endif
+// };
+// struct spinlock env_lock = {
+// #ifdef DEBUG_SPINLOCK
+//     .name = "env_lock"
+// #endif
+// };
+// struct spinlock console_lock = {
+// #ifdef DEBUG_SPINLOCK
+//     .name = "console_lock"
+// #endif
+// };
+// #endif /* USE_BIG_KERNEL_LOCK */
+
 #ifdef USE_BIG_KERNEL_LOCK
 /* The big kernel lock */
 struct spinlock kernel_lock = {
@@ -16,7 +41,6 @@ struct spinlock kernel_lock = {
     .name = "kernel_lock"
 #endif
 };
-#else
 struct spinlock pagealloc_lock = {
 #ifdef DEBUG_SPINLOCK
     .name = "pagealloc_lock"
@@ -30,6 +54,11 @@ struct spinlock env_lock = {
 struct spinlock console_lock = {
 #ifdef DEBUG_SPINLOCK
     .name = "console_lock"
+#endif
+};
+struct spinlock scheduler_lock = {
+#ifdef DEBUG_SPINLOCK
+    .name = "scheduler_lock"
 #endif
 };
 #endif /* USE_BIG_KERNEL_LOCK */

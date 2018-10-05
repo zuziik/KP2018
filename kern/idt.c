@@ -191,6 +191,9 @@ void int_dispatch(struct int_frame *frame)
          * using lapic_eoi() before calling the scheduler! lab 5
          */
         lapic_eoi();
+        if (holding(&kernel_lock)) {
+            panic("[3]\n");
+        }
         sched_yield();
         break;
     case IRQ_SPURIOUS:
@@ -276,12 +279,16 @@ void int_handler(struct int_frame *frame)
         if (curenv->env_status == ENV_DYING) {
             env_free(curenv);
             curenv = NULL;
+
+            cprintf("[INT_HANDLER 0] unlock kernel start\n");
+            unlock_kernel();
+            cprintf("[INT_HANDLER 0] unlock kernel finish\n");
+
             sched_yield();
-            if (!holding(&kernel_lock)) {
-                cprintf("[INT_HANDLER 2] lock kernel start\n");
-                lock_kernel();
-                cprintf("[INT_HANDLER 2] lock kernel finish\n");
-            }
+
+            cprintf("[INT_HANDLER 2] lock kernel start\n");
+            lock_kernel();
+            cprintf("[INT_HANDLER 2] lock kernel finish\n");
         }
 
         /* Copy interrupt frame (which is currently on the stack) into
@@ -299,10 +306,17 @@ void int_handler(struct int_frame *frame)
     /* If we made it to this point, then no other environment was scheduled, so
      * we should return to the current environment if doing so makes sense. */
     if (curenv && curenv->env_status == ENV_RUNNING) {
+        cprintf("[INT_HANDLER 1] unlock kernel start\n");
+        unlock_kernel();
+        cprintf("[INT_HANDLER 1] unlock kernel finish\n");
         env_run(curenv);
     }
-    else
+    else {
+        cprintf("[INT_HANDLER 2] unlock kernel start\n");
+        unlock_kernel();
+        cprintf("[INT_HANDLER 2] unlock kernel finish\n");
         sched_yield();
+    }
 }
 
 void page_fault_handler(struct int_frame *frame)

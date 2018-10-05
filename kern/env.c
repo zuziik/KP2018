@@ -230,7 +230,7 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     e->env_status = ENV_RUNNABLE;
     e->env_runs = 0;
 
-    e->timeslice = 1000000000;
+    e->timeslice = 5000000000;
     e->prev_time = 0;
     e->pause = -1;
 
@@ -536,7 +536,16 @@ void env_destroy(struct env *e)
 
     if (curenv == e) {
         curenv = NULL;
+
+        cprintf("[ENV_DESTROY] unlock kernel start\n");
+        unlock_kernel();
+        cprintf("[ENV_DESTROY] unlock kernel finish\n");
+
         sched_yield();
+
+        cprintf("[ENV_DESTROY] lock kernel start\n");
+        lock_kernel();
+        cprintf("[ENV_DESTROY] lock kernel finish\n");
     }
 }
 
@@ -589,6 +598,9 @@ void env_run(struct env *e)
      */
 
     /* LAB 3: your code here. */
+    cprintf("[ENV_RUN] lock kernel start\n");
+    lock_kernel();
+    cprintf("[ENV_RUN] lock kernel finish\n");
 
     cprintf("[ENV RUN] start\n");
 
@@ -608,11 +620,9 @@ void env_run(struct env *e)
 
     load_pml4((void *)PADDR(curenv->env_pml4));
 
-    if (kernel_lock.locked) {
-        cprintf("[ENV_RUN] unlock kernel start\n");
-        unlock_kernel(); // MATTHIJS: When to unlock kernel? I dont know!
-        cprintf("[ENV_RUN] unlock kernel finish\n");
-    }
+    cprintf("[ENV_RUN] unlock kernel start\n");
+    unlock_kernel();
+    cprintf("[ENV_RUN] unlock kernel finish\n");
     
     env_pop_frame(&curenv->env_frame);
 }

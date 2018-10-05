@@ -50,20 +50,35 @@ void kmain(struct boot_info *boot_info)
     lock_kernel();
     cprintf("[MAIN] lock kernel finish\n");
 
+    // Lock scheduler until all envs are added
+    cprintf("[MAIN] lock sched start\n");
+    lock_scheduler();
+    cprintf("[MAIN] lock sched finish\n");
+
     /* Starting non-boot CPUs */
     boot_aps();
 
 #if defined(TEST)
     /* Don't touch -- used by grading script! */
     ENV_CREATE(TEST, ENV_TYPE_USER);
-    ENV_CREATE(user_divzero, ENV_TYPE_USER);
-    ENV_CREATE(user_divzero, ENV_TYPE_USER);
 #else
     /* Touch all you want. */
     ENV_CREATE(user_divzero, ENV_TYPE_USER);
-    ENV_CREATE(user_divzero, ENV_TYPE_USER);
-    ENV_CREATE(user_divzero, ENV_TYPE_USER);
+    ENV_CREATE(user_vmatest, ENV_TYPE_USER);
+    ENV_CREATE(user_mapunmap, ENV_TYPE_USER);
+    ENV_CREATE(user_softint, ENV_TYPE_USER);
+    ENV_CREATE(user_mapunmap, ENV_TYPE_USER);
+    ENV_CREATE(user_mapunmap, ENV_TYPE_USER);
+    ENV_CREATE(user_vmatest, ENV_TYPE_USER);
 #endif
+
+    cprintf("[MAIN] unlock sched start\n");
+    unlock_scheduler();
+    cprintf("[MAIN] unlock sched finish\n");
+
+    cprintf("[MAIN] unlock kernel start\n");
+    unlock_kernel();
+    cprintf("[MAIN] unlock kernel finish\n");
 
     /* We only have one user environment for now, so just run it. */
     env_run(&envs[0]);
@@ -130,10 +145,10 @@ void mp_main(void)
      * only one CPU can enter the scheduler at a time!
      *
      * LAB 6: your code here.
-     * MATTHIJS: TODO
      */
-    // panic("HEEEEEEEEEEEEEEEEEELP\n");
-    // cprintf("BBBBBBBBBBBBBBBBBBBBBBBBBBBB\n");
+    if (holding(&kernel_lock)) {
+        panic("[1]\n");
+    }
     sched_yield();
 
     /* Remove this after you finish the per-CPU initialization code. */

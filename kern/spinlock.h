@@ -52,21 +52,37 @@ static inline void unlock_kernel(void)
      * Normally we wouldn't need to do this, but QEMU only runs one CPU at a
      * time and has a long time-slice.  Without the pause, this CPU is likely to
      * reacquire the lock before another CPU has even been given a chance to
-     * acquire it.
-     */
+     * acquire it. */
+     
     asm volatile("pause");
 }
 
-static inline void lock_pagealloc(void) { }
-static inline void unlock_pagealloc(void) { }
-static inline void lock_env(void) { }
-static inline void unlock_env(void) { }
-static inline void lock_console(void) { }
-static inline void unlock_console(void) { }
+// static inline void lock_pagealloc(void) { }
+// static inline void unlock_pagealloc(void) { }
+// static inline void lock_env(void) { }
+// static inline void unlock_env(void) { }
+// static inline void lock_console(void) { }
+// static inline void unlock_console(void) { }
 
 static inline void assert_lock_env(void) { }
 
-#else /* USE_BIG_KERNEL_LOCK */
+//-----------------------------------------------------TOP----------------
+extern struct spinlock pagealloc_lock;
+extern struct spinlock env_lock;
+extern struct spinlock console_lock;
+extern struct spinlock scheduler_lock;
+
+static inline void lock_pagealloc(void) { spin_lock(&pagealloc_lock); }
+static inline void unlock_pagealloc(void) { spin_unlock(&pagealloc_lock); asm volatile("pause"); }
+static inline void lock_env(void) { spin_lock(&env_lock); }
+static inline void unlock_env(void) { spin_unlock(&env_lock); asm volatile("pause"); }
+static inline void lock_console(void) { spin_lock(&console_lock); }
+static inline void unlock_console(void) { spin_unlock(&console_lock); asm volatile("pause"); }
+static inline void lock_scheduler(void) { spin_lock(&scheduler_lock); }
+static inline void unlock_scheduler(void) { spin_unlock(&scheduler_lock); asm volatile("pause"); }
+
+//-------------------------------------------------------BOT--------------
+#else  /* USE_BIG_KERNEL_LOCK */
 
 extern struct spinlock pagealloc_lock;
 extern struct spinlock env_lock;
