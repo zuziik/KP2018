@@ -264,7 +264,7 @@ void int_handler(struct int_frame *frame)
         /* Interrupt from user mode. */
         /* Acquire the big kernel lock before doing any serious kernel work.
          * LAB 6: your code here. */
-        if (!kernel_lock.locked) {
+        if (!holding(&kernel_lock)) {
             cprintf("[INT_HANDLER 1] lock kernel start\n");
             lock_kernel();
             cprintf("[INT_HANDLER 1] lock kernel finish\n");
@@ -277,10 +277,11 @@ void int_handler(struct int_frame *frame)
             env_free(curenv);
             curenv = NULL;
             sched_yield();
-
-            cprintf("[INT_HANDLER 2] lock kernel start\n");
-            lock_kernel();
-            cprintf("[INT_HANDLER 2] lock kernel finish\n");
+            if (!holding(&kernel_lock)) {
+                cprintf("[INT_HANDLER 2] lock kernel start\n");
+                lock_kernel();
+                cprintf("[INT_HANDLER 2] lock kernel finish\n");
+            }
         }
 
         /* Copy interrupt frame (which is currently on the stack) into

@@ -38,7 +38,7 @@ void reset_pause(envid_t env_id) {
  */
 void sched_yield(void)
 {
-    if (!kernel_lock.locked) {
+    if (!holding(&kernel_lock)) {
         cprintf("[SCHED_YIELD] lock kernel start\n");
         lock_kernel();
         cprintf("[SCHED_YIELD] lock kernel finish\n");

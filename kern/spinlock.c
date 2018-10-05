@@ -37,7 +37,7 @@ struct spinlock console_lock = {
 /*
  * Check whether this CPU is holding the lock.
  */
-static int holding(struct spinlock *lock)
+int holding(struct spinlock *lock)       // MATTHIJS: removed static
 {
     return lock->locked && lock->cpu == thiscpu;
 }

@@ -390,9 +390,9 @@ static void load_icode(struct env *e, uint8_t *binary)
                 binary + ph[i].p_offset, ph[i].p_va, ph[i].p_filesz);
         }
         // Also get the non-loadable parts as bss segment
-        else {
-            memset((void *)ph[i].p_va, 0, ROUNDUP(ph[i].p_memsz, PAGE_SIZE));
-        }
+        // else {
+        //     memset((void *)ph[i].p_va, 0, ROUNDUP(ph[i].p_memsz, PAGE_SIZE));
+        // }
     }
     
     e->env_frame.rip = eh->e_entry;
