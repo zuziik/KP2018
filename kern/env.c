@@ -25,6 +25,72 @@ struct env *env_free_list;          /* Free environment list */
 
 #define ENVGENSHIFT 12      /* >= LOGNENV */
 
+int unlock_kernel_lock_env() {
+    int kern = 0;
+    if (holding(&kernel_lock)) {
+        kern += 1;
+        cprintf("[unlock_kernel_lock_env] unlock kernel start\n");
+        unlock_kernel();
+        cprintf("[unlock_kernel_lock_env] unlock kernel finish\n");
+    }
+
+    if (!holding(&env_lock)) {
+        kern += 2;
+        cprintf("[unlock_kernel_lock_env] lock env start\n");
+        lock_env();
+        cprintf("[unlock_kernel_lock_env] lock env finish\n");
+    }
+
+    return kern;
+}
+
+void lock_kernel_unlock_env(int kern) {
+    if (kern > 1) {
+        cprintf("[lock_kernel_unlock_env] unlock env start\n");
+        unlock_env();
+        cprintf("[lock_kernel_unlock_env] unlock env finish\n");
+    }
+    
+    if (kern == 1 || kern == 3) {
+        cprintf("[lock_kernel_unlock_env] lock kernel start\n");
+        lock_kernel();
+        cprintf("[lock_kernel_unlock_env] lock kernel finish\n");
+    }
+}
+
+int lock_kernel_lock_env() {
+    int kern = 0;
+    if (!holding(&kernel_lock)) {
+        kern += 1;
+        cprintf("[lock_kernel_lock_env] lock kernel start\n");
+        lock_kernel();
+        cprintf("[lock_kernel_lock_env] lock kernel finish\n");
+    }
+
+    if (!holding(&env_lock)) {
+        kern += 2;
+        cprintf("[lock_kernel_lock_env] lock env start\n");
+        lock_env();
+        cprintf("[lock_kernel_lock_env] lock env finish\n");
+    }
+
+    return kern;
+}
+
+void unlock_kernel_unlock_env(int kern) {
+    if (kern > 1) {
+        cprintf("[unlock_kernel_unlock_env] unlock env start\n");
+        unlock_env();
+        cprintf("[unlock_kernel_unlock_env] unlock env finish\n");
+    }
+
+    if (kern == 1 || kern == 3) {
+        cprintf("[unlock_kernel_unlock_env] unlock kernel start\n");
+        unlock_kernel();
+        cprintf("[unlock_kernel_unlock_env] unlock kernel finish\n");
+    }
+}
+
 /*
  * Converts an envid to an env pointer.
  * If checkperm is set, the specified environment must be either the
@@ -39,11 +105,13 @@ int envid2env(envid_t envid, struct env **env_store, bool checkperm)
 {
     struct env *e;
 
+    int kern = unlock_kernel_lock_env();
     assert_lock_env();
 
     /* If envid is zero, return the current environment. */
     if (envid == 0) {
         *env_store = curenv;
+        lock_kernel_unlock_env(kern);
         return 0;
     }
 
@@ -57,6 +125,7 @@ int envid2env(envid_t envid, struct env **env_store, bool checkperm)
     e = &envs[ENVX(envid)];
     if (e->env_status == ENV_FREE || e->env_id != envid) {
         *env_store = 0;
+        lock_kernel_unlock_env(kern);
         return -E_BAD_ENV;
     }
 
@@ -69,10 +138,12 @@ int envid2env(envid_t envid, struct env **env_store, bool checkperm)
      */
     if (checkperm && e != curenv && e->env_parent_id != curenv->env_id) {
         *env_store = 0;
+        lock_kernel_unlock_env(kern);
         return -E_BAD_ENV;
     }
 
     *env_store = e;
+    lock_kernel_unlock_env(kern);
     return 0;
 }
 
@@ -87,7 +158,6 @@ void env_init(void)
 {
     /* Set up envs array. */
     /* LAB 3: your code here. */
-
     cprintf("[ENV INIT] start\n");
 
     env_free_list = NULL;
@@ -123,9 +193,9 @@ static int env_setup_vm(struct env *e)
     struct page_info *p = NULL;
 
     /* Allocate a page for the page directory */
-    if (!(p = page_alloc(ALLOC_ZERO)))
+    if (!(p = page_alloc(ALLOC_ZERO))) {
         return -E_NO_MEM;
-
+    }
 
     /*
      * Now, set e->env_pml4 and initialize the page directory.
@@ -145,7 +215,8 @@ static int env_setup_vm(struct env *e)
      */
 
     /* LAB 3: your code here. */
-    p->pp_ref += 1;
+    page_increm(p);
+    // p->pp_ref += 1;
     e->env_pml4 = (struct page_table *)KADDR(page2pa(p));
 
     // The initial VA below UTOP is empty
@@ -203,20 +274,27 @@ static int env_setup_vma(struct env *e) {
 int env_alloc(struct env **newenv_store, envid_t parent_id)
 {
     cprintf("[ENV ALLOC] start\n");
+    int kern = lock_kernel_lock_env();
     int32_t generation;
     int r;
     struct env *e;
 
-    if (!(e = env_free_list))
+    if (!(e = env_free_list)) {
+        unlock_kernel_unlock_env(kern);
         return -E_NO_FREE_ENV;
+    }
 
     /* Allocate and set up the page directory for this environment. */
-    if ((r = env_setup_vm(e)) < 0)
+    if ((r = env_setup_vm(e)) < 0) {
+        unlock_kernel_unlock_env(kern);
         return r;
+    }
 
     /* Set up list of VMAs for this environment. */
-    if ((r = env_setup_vma(e)) < 0)
+    if ((r = env_setup_vma(e)) < 0) {
+        unlock_kernel_unlock_env(kern);
         return r;
+    }
 
     /* Generate an env_id for this environment. */
     generation = (e->env_id + (1 << ENVGENSHIFT)) & ~(NENV - 1);
@@ -269,6 +347,7 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     *newenv_store = e;
 
     cprintf("[%08x] new env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
+    unlock_kernel_unlock_env(kern);
     cprintf("[ENV ALLOC] end\n");
     return 0;
 }
@@ -280,34 +359,34 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
  * Pages should be writable by user and kernel.
  * Panic if any allocation attempt fails.
  */
-static void region_alloc(struct env *e, void *va, size_t len)
-{
-    /*
-     * LAB 3: Your code here.
-     * (But only if you need it for load_icode.)
-     *
-     * Hint: It is easier to use region_alloc if the caller can pass
-     *   'va' and 'len' values that are not page-aligned.
-     *   You should round va down, and round (va + len) up.
-     *   (Watch out for corner-cases!)
-     */
+// static void region_alloc(struct env *e, void *va, size_t len)
+// {
+//     /*
+//      * LAB 3: Your code here.
+//      * (But only if you need it for load_icode.)
+//      *
+//      * Hint: It is easier to use region_alloc if the caller can pass
+//      *   'va' and 'len' values that are not page-aligned.
+//      *   You should round va down, and round (va + len) up.
+//      *   (Watch out for corner-cases!)
+//      */
 
-    cprintf("[REGION ALLOC] start\n");
+//     cprintf("[REGION ALLOC] start\n");
 
-    struct page_info *p = NULL;
-    uintptr_t va_p = (uintptr_t) va;
-    uintptr_t va_start = ROUNDDOWN(va_p, PAGE_SIZE);
-    uintptr_t va_end = ROUNDUP(va_p + len, PAGE_SIZE);
-    uintptr_t vi;
+//     struct page_info *p = NULL;
+//     uintptr_t va_p = (uintptr_t) va;
+//     uintptr_t va_start = ROUNDDOWN(va_p, PAGE_SIZE);
+//     uintptr_t va_end = ROUNDUP(va_p + len, PAGE_SIZE);
+//     uintptr_t vi;
 
-    for (vi = va_start; vi < va_end; vi += PAGE_SIZE) {
-        if (!(p = page_alloc(ALLOC_ZERO)))
-            panic("Couldn't allocate memory for environment");
-        page_insert(e->env_pml4, p, (void *)vi, PAGE_WRITE | PAGE_USER);
-    }
+//     for (vi = va_start; vi < va_end; vi += PAGE_SIZE) {
+//         if (!(p = page_alloc(ALLOC_ZERO)))
+//             panic("Couldn't allocate memory for environment");
+//         page_insert(e->env_pml4, p, (void *)vi, PAGE_WRITE | PAGE_USER);
+//     }
 
-    cprintf("[REGION ALLOC] end\n");
-}
+//     cprintf("[REGION ALLOC] end\n");
+// }
 
 /*
  * Set up the initial program binary, stack, and processor flags for a user
@@ -435,6 +514,7 @@ void env_create(uint8_t *binary, enum env_type type)
 {
     /* LAB 3: your code here. */
     cprintf("[ENV CREATE] start\n");
+    int kern = lock_kernel_lock_env();
     struct env *e;
     int res;
 
@@ -453,6 +533,8 @@ void env_create(uint8_t *binary, enum env_type type)
     else {
         panic("Error in env_alloc");
     }
+
+    unlock_kernel_unlock_env(kern);
     cprintf("[ENV CREATE] end\n");
 }
 
@@ -494,6 +576,7 @@ void env_free_page_tables(struct page_table *page_table, size_t depth)
  */
 void env_free(struct env *e)
 {
+    int kern = lock_kernel_lock_env();
     /* If freeing the current environment, switch to kern_pgdir
      * before freeing the page directory, just in case the page
      * gets reused. */
@@ -513,6 +596,8 @@ void env_free(struct env *e)
     e->env_status = ENV_FREE;
     e->env_link = env_free_list;
     env_free_list = e;
+
+    unlock_kernel_unlock_env(kern);
 }
 
 /*
@@ -522,6 +607,7 @@ void env_free(struct env *e)
  */
 void env_destroy(struct env *e)
 {
+    int kern = lock_kernel_lock_env();
     assert_lock_env();
 
     /* If e is currently running on other CPUs, we change its state to
@@ -537,16 +623,20 @@ void env_destroy(struct env *e)
     if (curenv == e) {
         curenv = NULL;
 
+        cprintf("[ENV_DESTROY] unlock env start\n");
+        unlock_env();
+        cprintf("[ENV_DESTROY] unlock env finish\n");
+
         cprintf("[ENV_DESTROY] unlock kernel start\n");
         unlock_kernel();
         cprintf("[ENV_DESTROY] unlock kernel finish\n");
 
         sched_yield();
 
-        cprintf("[ENV_DESTROY] lock kernel start\n");
-        lock_kernel();
-        cprintf("[ENV_DESTROY] lock kernel finish\n");
+        panic("ENV_DESTROY aaaaaa\n");
     }
+
+    unlock_kernel_unlock_env(kern);
 }
 
 /*
@@ -598,11 +688,17 @@ void env_run(struct env *e)
      */
 
     /* LAB 3: your code here. */
-    cprintf("[ENV_RUN] lock kernel start\n");
-    lock_kernel();
-    cprintf("[ENV_RUN] lock kernel finish\n");
-
     cprintf("[ENV RUN] start\n");
+
+    if (holding(&kernel_lock)) {
+        panic("HOLDING KERNEL LOCK IN ENV_RUN!\n");
+    }
+
+    if (!holding(&env_lock)) {
+        cprintf("[ENV_RUN] lock env start\n");
+        lock_env();
+        cprintf("[ENV_RUN] lock env finish\n");
+    }
 
     // If there is any already running environment, make it runnable
     if ((curenv != NULL) && (curenv->env_status == ENV_RUNNING))
@@ -618,11 +714,11 @@ void env_run(struct env *e)
         curenv->prev_time = read_tsc();
     }
 
+    cprintf("[ENV_RUN] unlock env start\n");
+    unlock_env();
+    cprintf("[ENV_RUN] unlock env finish\n");
+
     load_pml4((void *)PADDR(curenv->env_pml4));
 
-    cprintf("[ENV_RUN] unlock kernel start\n");
-    unlock_kernel();
-    cprintf("[ENV_RUN] unlock kernel finish\n");
-    
     env_pop_frame(&curenv->env_frame);
 }

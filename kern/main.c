@@ -46,14 +46,18 @@ void kmain(struct boot_info *boot_info)
 
     /* Acquire the big kernel lock before waking up APs.
      * LAB 6: your code here. */
+    cprintf("[MAIN] lock master start\n");
+    lock_master();
+    cprintf("[MAIN] lock master finish\n");
+
     cprintf("[MAIN] lock kernel start\n");
     lock_kernel();
     cprintf("[MAIN] lock kernel finish\n");
 
     // Lock scheduler until all envs are added
-    cprintf("[MAIN] lock sched start\n");
-    lock_scheduler();
-    cprintf("[MAIN] lock sched finish\n");
+    cprintf("[MAIN] lock env start\n");
+    lock_env();
+    cprintf("[MAIN] lock env finish\n");
 
     /* Starting non-boot CPUs */
     boot_aps();
@@ -72,16 +76,21 @@ void kmain(struct boot_info *boot_info)
     ENV_CREATE(user_vmatest, ENV_TYPE_USER);
 #endif
 
-    cprintf("[MAIN] unlock sched start\n");
-    unlock_scheduler();
-    cprintf("[MAIN] unlock sched finish\n");
+    cprintf("[MAIN] unlock env start\n");
+    unlock_env();
+    cprintf("[MAIN] unlock env finish\n");
 
     cprintf("[MAIN] unlock kernel start\n");
     unlock_kernel();
     cprintf("[MAIN] unlock kernel finish\n");
 
+    cprintf("[MAIN] unlock master start\n");
+    unlock_master();
+    cprintf("[MAIN] unlock master finish\n");
+
     /* We only have one user environment for now, so just run it. */
-    env_run(&envs[0]);
+    sched_yield();
+    // env_run(&envs[0]);
 }
 
 /*
@@ -146,9 +155,6 @@ void mp_main(void)
      *
      * LAB 6: your code here.
      */
-    if (holding(&kernel_lock)) {
-        panic("[1]\n");
-    }
     sched_yield();
 
     /* Remove this after you finish the per-CPU initialization code. */

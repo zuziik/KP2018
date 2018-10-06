@@ -191,10 +191,16 @@ void int_dispatch(struct int_frame *frame)
          * using lapic_eoi() before calling the scheduler! lab 5
          */
         lapic_eoi();
-        if (holding(&kernel_lock)) {
-            panic("[3]\n");
-        }
+
+        cprintf("[INT_DISPATCH] unlock kernel start\n");
+        unlock_kernel();
+        cprintf("[INT_DISPATCH] unlock kernel finish\n");
+
         sched_yield();
+
+        cprintf("[INT_DISPATCH] lock kernel start\n");
+        lock_kernel();
+        cprintf("[INT_DISPATCH] lock kernel finish\n");
         break;
     case IRQ_SPURIOUS:
         cprintf("Spurious interrupt on IRQ #7.\n");
@@ -247,10 +253,15 @@ void int_handler(struct int_frame *frame)
         asm volatile("hlt");
 
     /* Re-acqurie the big kernel lock if we were halted in sched_yield(). */
-    if (xchg(&thiscpu->cpu_status, CPU_STARTED) == CPU_HALTED) {
-        cprintf("[INT_HANDLER 0] lock kernel start\n");
-        lock_kernel();
-        cprintf("[INT_HANDLER 0] lock kernel finish\n");
+    // if (xchg(&thiscpu->cpu_status, CPU_STARTED) == CPU_HALTED) {
+    //     cprintf("[INT_HANDLER 0] lock kernel start\n");
+    //     lock_kernel();
+    //     cprintf("[INT_HANDLER 0] lock kernel finish\n");
+    // }
+    if (holding(&kernel_lock)) {
+        cprintf("[INT_HANDLER] unlock kernel start\n");
+        unlock_kernel();
+        cprintf("[INT_HANDLER] unlock kernel finish\n");
     }
 
     /* Check that interrupts are disabled.
@@ -267,11 +278,11 @@ void int_handler(struct int_frame *frame)
         /* Interrupt from user mode. */
         /* Acquire the big kernel lock before doing any serious kernel work.
          * LAB 6: your code here. */
-        if (!holding(&kernel_lock)) {
-            cprintf("[INT_HANDLER 1] lock kernel start\n");
-            lock_kernel();
-            cprintf("[INT_HANDLER 1] lock kernel finish\n");
-        }
+        // if (!holding(&kernel_lock)) {
+        //     cprintf("[INT_HANDLER 1] lock kernel start\n");
+        //     lock_kernel();
+        //     cprintf("[INT_HANDLER 1] lock kernel finish\n");
+        // }
 
         assert(curenv);
 
@@ -280,15 +291,15 @@ void int_handler(struct int_frame *frame)
             env_free(curenv);
             curenv = NULL;
 
-            cprintf("[INT_HANDLER 0] unlock kernel start\n");
-            unlock_kernel();
-            cprintf("[INT_HANDLER 0] unlock kernel finish\n");
+            // cprintf("[INT_HANDLER 0] unlock kernel start\n");
+            // unlock_kernel();
+            // cprintf("[INT_HANDLER 0] unlock kernel finish\n");
 
             sched_yield();
 
-            cprintf("[INT_HANDLER 2] lock kernel start\n");
-            lock_kernel();
-            cprintf("[INT_HANDLER 2] lock kernel finish\n");
+            // cprintf("[INT_HANDLER 2] lock kernel start\n");
+            // lock_kernel();
+            // cprintf("[INT_HANDLER 2] lock kernel finish\n");
         }
 
         /* Copy interrupt frame (which is currently on the stack) into
@@ -300,23 +311,24 @@ void int_handler(struct int_frame *frame)
         frame = &curenv->env_frame;
     }
 
+    cprintf("[INT_HANDLER] lock kernel start\n");
+    lock_kernel();
+    cprintf("[INT_HANDLER] lock kernel finish\n");
+
     /* Dispatch based on the type of interrupt that occurred. */
     int_dispatch(frame);
+
+    cprintf("[INT_HANDLER] unlock kernel start\n");
+    unlock_kernel();
+    cprintf("[INT_HANDLER] unlock kernel finish\n");
 
     /* If we made it to this point, then no other environment was scheduled, so
      * we should return to the current environment if doing so makes sense. */
     if (curenv && curenv->env_status == ENV_RUNNING) {
-        cprintf("[INT_HANDLER 1] unlock kernel start\n");
-        unlock_kernel();
-        cprintf("[INT_HANDLER 1] unlock kernel finish\n");
         env_run(curenv);
     }
-    else {
-        cprintf("[INT_HANDLER 2] unlock kernel start\n");
-        unlock_kernel();
-        cprintf("[INT_HANDLER 2] unlock kernel finish\n");
+    else
         sched_yield();
-    }
 }
 
 void page_fault_handler(struct int_frame *frame)
@@ -424,8 +436,10 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
     else {
         new_page = page_alloc(ALLOC_ZERO);
         memcpy((void *) KADDR(page2pa(new_page)), (void *) KADDR(page2pa(old_page)), PAGE_SIZE);
-        old_page->pp_ref--;
-        new_page->pp_ref++;
+        page_decref(old_page);
+        page_increm(new_page);
+        // old_page->pp_ref--;
+        // new_page->pp_ref++;
         cprintf("[PAGE_FAULT_HANDLER] -> pp_ref | new = %d | old = %d\n", new_page->pp_ref, old_page->pp_ref);
         *pt_entry = page2pa(new_page) | perm;
         cprintf("[PAGE_FAULT_HANDLER] -> cow - copying and changing perms\n");
