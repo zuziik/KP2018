@@ -38,13 +38,13 @@ void reset_pause(envid_t env_id) {
  */
 void sched_yield(void)
 {
-    cprintf("[SCHED_YIELD] start\n\n");
+    cprintf("[SCHED_YIELD] start\n");
     if (!holding(&env_lock)) {
         lock_env();
     }
 
     struct env *env = NULL;
-    int curenv_i, i;
+    int curenv_i, i, j;
     int64_t time = read_tsc();
     int64_t diff;
 
@@ -62,7 +62,7 @@ void sched_yield(void)
         if (time >= curenv->prev_time)   
             diff =  time - curenv->prev_time;
         else
-            diff = time - curenv->prev_time + 0x5000000000;
+            diff = time - curenv->prev_time + 0x100000000;
 
         if (curenv->timeslice > diff) {
             curenv->timeslice -= diff;
@@ -83,6 +83,36 @@ void sched_yield(void)
 
     // Corner case: curenv is last env so go circular
     i = (curenv_i + 1) % NENV;
+
+    //------------------------------------ TOP -----------------------------------------
+    /* Note: timeslice and prev_time are only used for interval when to call 
+     * a certain kernel env again, not to check if it has to stop!
+     */
+    // NOTE 2: CURENV DIDNT GET CHANGED WHEN CALLING A KERNEL THREAD
+    //         THIS CAN CAUSE BIG PROBLEMS? maybe
+
+    // Update timeslices
+    for (j = 0; j < 32; j++) {
+        if (kthreads[i].kt_id != -1) {
+            if (time >= kthreads[i].prev_time) 
+                diff =  time - kthreads[i].prev_time;
+            else
+                diff = time - kthreads[i].prev_time + 0x100000000;
+
+            kthreads[i].timeslice -= diff;
+            kthreads[i].prev_time = time;
+        }
+    }
+
+    // Try to schedule a kthread
+    for (j = 0; j < 32; j++) {
+        if (kthreads[i].kt_id != -1 && kthreads[i].timeslice < 0) {
+            kthread_run(&kthreads[i]);
+            break;      // comment this out, only while it doesnt work yet
+        }
+    }
+
+    //------------------------------------ BOT -----------------------------------------
 
     /*
      * Implement simple round-robin scheduling.
@@ -126,7 +156,7 @@ void sched_yield(void)
     // Run the env
     if (env != NULL) {
         cprintf("[SCHED_YIELD] new\n");
-        env->timeslice = 5000000000;
+        env->timeslice = 100000000;
         env->prev_time = time;
 
         env_run(env);

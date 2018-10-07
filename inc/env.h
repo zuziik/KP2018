@@ -101,4 +101,17 @@ struct vma {
     uint64_t file_size; // "..." length "... ", binary source length
 };
 
+
+struct kthread {
+    struct int_frame kt_frame; /* Saved registers */
+    envid_t kt_id;             /* Unique environment identifier */
+    enum env_type kt_type; /* Indicates special system environments */
+    unsigned kt_status;        /* Status of the environment */
+    int kt_cpunum;             /* The CPU that the env is running on */
+
+    // Keep track of the timeslice                     
+    int64_t timeslice;
+    int64_t prev_time;
+};
+
 #endif /* !JOS_INC_ENV_H */

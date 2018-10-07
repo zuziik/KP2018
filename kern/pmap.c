@@ -197,11 +197,21 @@ void mem_init(struct boot_info *boot_info)
         pages[i].is_available = 0;
     }
 
-     /*********************************************************************
+    /*********************************************************************
+     * Allocate 'kthreads', list of all kernel threads
+     */
+    kthreads = boot_alloc(sizeof(struct kthread) * 32);
+
+    // kthreads with id -1 are not used
+    cprintf("[start loop]\n");
+    for (i = 0; i < 32; i++) {
+        kthreads[i].kt_id = -1;
+    }
+
+    /*********************************************************************
      * Make 'envs' point to an array of size 'NENV' of 'struct env'.
      * LAB 3: your code here.
      */
-
     envs = boot_alloc(sizeof(struct env)*NENV);
 
     for (i = 0; i < NENV; i++) {
@@ -249,8 +259,8 @@ void mem_init(struct boot_info *boot_info)
         ROUNDUP(NENV * sizeof(struct env), PAGE_SIZE),
         PADDR(envs), PAGE_WRITE | PAGE_NO_EXEC | PAGE_USER);
 
-    physaddr_t *addr;
-    addr = page_walk(kern_pml4, (void *)USER_ENVS, 0);
+    // physaddr_t *addr;
+    // addr = page_walk(kern_pml4, (void *)USER_ENVS, 0);
 
     /*********************************************************************
      * Map the 'VMAs' array as kernel RW, user NONE
@@ -261,6 +271,13 @@ void mem_init(struct boot_info *boot_info)
         boot_map_region(kern_pml4, USER_VMAS + (i)*vma_list_size, vma_list_size,
             PADDR(envs[i].vma_array), PAGE_WRITE | PAGE_NO_EXEC);
     }
+
+    // Map kthreads RW | None
+    boot_map_region(kern_pml4, USER_KTHREADS, 
+        ROUNDUP(32 * sizeof(struct kthread), PAGE_SIZE),
+        PADDR(kthreads), PAGE_WRITE | PAGE_NO_EXEC);
+
+    // physaddr_t *addr1 = page_walk(kern_pml4, (void *)USER_KTHREADS, 0);
 
     /*********************************************************************
      * Use the physical memory that 'bootstack' refers to as the kernel
@@ -1346,6 +1363,7 @@ static void check_kern_pml4(void)
         case PML4_INDEX(KSTACK_TOP-1):
         case PML4_INDEX(USER_PAGES):
         case PML4_INDEX(USER_ENVS):
+        case PML4_INDEX(USER_KTHREADS):
         case PML4_INDEX(MMIO_BASE):
             assert(pml4->entries[i] & PAGE_PRESENT);
             break;

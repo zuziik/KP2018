@@ -22,8 +22,56 @@
 struct env *envs = NULL;            /* All environments */
 struct env *env_free_list;          /* Free environment list */            
                                     /* (linked by env->env_link) */
+struct kthread *kthreads = NULL;
 
 #define ENVGENSHIFT 12      /* >= LOGNENV */
+
+void kthread_create() {
+    int id = 0;
+    int i;
+
+    // generate new id
+    for (i = 0; i < 32; i++) {
+        if (kthreads[i].kt_id == -1) {
+            break;
+        }
+
+        id++;
+    }
+
+    if (i == 32) {
+        panic("No free kthread!\n");
+    }
+
+    kthreads[i].kt_id = id;
+    kthreads[i].kt_type = ENV_TYPE_USER;            // Needed?
+    kthreads[i].kt_status = ENV_RUNNABLE;
+
+    kthreads[i].timeslice = 100000000;
+    kthreads[i].prev_time = 0;
+
+    // Set frame to 0 to prevent leaking
+    memset(&kthreads[i].kt_frame, 0, sizeof kthreads[i].kt_frame);
+
+    // TODO
+    // Set registers
+    // Set interrupt flags
+}
+
+// Start a kernel thread
+void kthread_run(struct kthread *kt)
+{
+    /* LAB 3: your code here. */
+    cprintf("[KTHREAD_RUN] start\n");
+
+    // int lock = local_lock_env();
+
+    // set things
+
+    // unlock_env();
+
+    // start running
+}
 
 int local_lock_env() {
     int kern = 0;
@@ -263,7 +311,7 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     e->env_status = ENV_RUNNABLE;
     e->env_runs = 0;
 
-    e->timeslice = 5000000000;
+    e->timeslice = 100000000;
     e->prev_time = 0;
     e->pause = -1;
 
@@ -655,3 +703,4 @@ void env_run(struct env *e)
     load_pml4((void *)PADDR(curenv->env_pml4));
     env_pop_frame(&curenv->env_frame);
 }
+

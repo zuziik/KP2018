@@ -66,6 +66,11 @@ void kmain(struct boot_info *boot_info)
     ENV_CREATE(user_vmatest, ENV_TYPE_USER);
 #endif
 
+    // Create some kernel threads
+    kthread_create();
+    kthread_create();
+    kthread_create();
+
     unlock_env();
     unlock_master();
 
@@ -187,4 +192,3 @@ void _warn(const char *file, int line, const char *fmt,...)
     cprintf("\n");
     va_end(ap);
 }
-
