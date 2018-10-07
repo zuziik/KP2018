@@ -254,14 +254,7 @@ void int_handler(struct int_frame *frame)
 
     /* Re-acqurie the big kernel lock if we were halted in sched_yield(). */
     // if (xchg(&thiscpu->cpu_status, CPU_STARTED) == CPU_HALTED) {
-    //     cprintf("[INT_HANDLER 0] lock kernel start\n");
-    //     lock_kernel();
-    //     cprintf("[INT_HANDLER 0] lock kernel finish\n");
-    // }
-    // if (holding(&kernel_lock)) {
-    //     cprintf("[INT_HANDLER] unlock kernel start\n");
-    //     unlock_kernel();
-    //     cprintf("[INT_HANDLER] unlock kernel finish\n");
+    //     //...
     // }
 
     /* Check that interrupts are disabled.
@@ -278,12 +271,6 @@ void int_handler(struct int_frame *frame)
         /* Interrupt from user mode. */
         /* Acquire the big kernel lock before doing any serious kernel work.
          * LAB 6: your code here. */
-        // if (!holding(&kernel_lock)) {
-        //     cprintf("[INT_HANDLER 1] lock kernel start\n");
-        //     lock_kernel();
-        //     cprintf("[INT_HANDLER 1] lock kernel finish\n");
-        // }
-
         assert(curenv);
 
         /* Garbage collect if current enviroment is a zombie. */
@@ -291,15 +278,7 @@ void int_handler(struct int_frame *frame)
             env_free(curenv);
             curenv = NULL;
 
-            // cprintf("[INT_HANDLER 0] unlock kernel start\n");
-            // unlock_kernel();
-            // cprintf("[INT_HANDLER 0] unlock kernel finish\n");
-
             sched_yield();
-
-            // cprintf("[INT_HANDLER 2] lock kernel start\n");
-            // lock_kernel();
-            // cprintf("[INT_HANDLER 2] lock kernel finish\n");
         }
 
         /* Copy interrupt frame (which is currently on the stack) into
@@ -311,16 +290,8 @@ void int_handler(struct int_frame *frame)
         frame = &curenv->env_frame;
     }
 
-    // cprintf("[INT_HANDLER] lock kernel start\n");
-    // lock_kernel();
-    // cprintf("[INT_HANDLER] lock kernel finish\n");
-
     /* Dispatch based on the type of interrupt that occurred. */
     int_dispatch(frame);
-
-    // cprintf("[INT_HANDLER] unlock kernel start\n");
-    // unlock_kernel();
-    // cprintf("[INT_HANDLER] unlock kernel finish\n");
 
     /* If we made it to this point, then no other environment was scheduled, so
      * we should return to the current environment if doing so makes sense. */

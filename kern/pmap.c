@@ -38,90 +38,50 @@ static void check_page_hugepages(void);
 static void check_page_installed_pml4(void);
 static void check_wx(void);
 
-int lock_page_unlock_rest() {
+int lock_page_unlock_env() {
     int lock = 0;
 
     if (!holding(&master_lock)) {
         if (holding(&env_lock)) {
             lock += 1;
-            // cprintf("[lock_page_unlock_rest] unlock env start\n");
             unlock_env();
-            // cprintf("[lock_page_unlock_rest] unlock env finish\n");
         }
-
-        // if (holding(&kernel_lock)) {
-        //     lock += 2;
-        //     // cprintf("[lock_page_unlock_rest] unlock kernel start\n");
-        //     unlock_kernel();
-        //     // cprintf("[lock_page_unlock_rest] unlock kernel finish\n");
-        // }
     }
 
     if (!holding(&pagealloc_lock)) {
-        lock += 4;
-        // cprintf("[lock_page_unlock_rest] lock pagealloc start\n");
+        lock += 2;
         lock_pagealloc();
-        // cprintf("[lock_page_unlock_rest] lock pagealloc finish\n");
     }
 
     return lock;
 }
 
-void unlock_page_lock_rest(int lock) {
-    if (lock > 3) {
-        // cprintf("[unlock_page_lock_rest] unlock pagealloc start\n");
+void unlock_page_lock_env(int lock) {
+    if (lock > 1) {
         unlock_pagealloc();
-        // cprintf("[unlock_page_lock_rest] unlock pagealloc finish\n");
     }
 
-    // if (lock == 2 || lock == 3 || lock > 5) {
-    //     // cprintf("[unlock_page_lock_rest] lock kernel start\n");
-    //     lock_kernel();
-    //     // cprintf("[unlock_page_lock_rest] lock kernel finish\n");
-    // }
-
-    if (lock % 2 == 1) {
-        // cprintf("[unlock_page_lock_rest] lock env start\n");
+    if (lock == 1 || lock == 3) {
         lock_env();
-        // cprintf("[unlock_page_lock_rest] lock env finish\n");
     }
 }
 
-int unlock_kernel_env() {
+int pmap_unlock_env() {
     int lock = 0;
 
-    if (holding(&master_lock)) {
-        return 0;
+    if (!holding(&master_lock)) {
+        if (holding(&env_lock)) {
+            lock ++;
+            unlock_env();
+        }
     }        
-
-    if (holding(&env_lock)) {
-        lock += 1;
-        // cprintf("[unlock_kernel_env] unlock env start\n");
-        unlock_env();
-        // cprintf("[unlock_kernel_env] unlock env finish\n");
-    }
-
-    // if (holding(&kernel_lock)) {
-    //     lock += 2;
-    //     // cprintf("[unlock_kernel_env] unlock kernel start\n");
-    //     unlock_kernel();
-    //     // cprintf("[unlock_kernel_env] unlock kernel finish\n");
-    // }
 
     return lock;
 }
 
-void lock_kernel_env(int lock) {
-    // if (lock > 1) {
-    //     // cprintf("[lock_kernel_env] lock kernel start\n");
-    //     lock_kernel();
-    //     // cprintf("[lock_kernel_env] lock kernel finish\n");
-    // }
-
-    if (lock == 1) {
-        // cprintf("[lock_kernel_env] lock env start\n");
+void pmap_lock_env(int lock) {
+    if (lock) {
         lock_env();
-        // cprintf("[lock_kernel_env] lock env finish\n");
     }
 }
 
@@ -347,9 +307,7 @@ void mem_init(struct boot_info *boot_info)
     mem_init_mp();
 
     /* Check that the initial page directory has been set up correctly. */
-    cprintf("[CHECK_KERN_PML4] START - W3 ENV CHECK\n");
     check_kern_pml4();
-    cprintf("[CHECK_KERN_PML4] END   - W3 ENV CHECK\n");
 
     /* Switch from the minimal entry page directory to the full kern_pml4
      * page table we just created.  Our instruction pointer should be
@@ -519,14 +477,14 @@ void page_init(struct boot_info *boot_info)
  */
 struct page_info *page_alloc(int alloc_flags)
 {
-    int lock = lock_page_unlock_rest();
+    int lock = lock_page_unlock_env();
     struct page_info *page;
     struct page_info *tmp;
     int i;
     
     // If out of memory, return NULL
     if (page_free_list == NULL) {
-        unlock_page_lock_rest(lock);
+        unlock_page_lock_env(lock);
         return NULL;
     }
 
@@ -534,7 +492,7 @@ struct page_info *page_alloc(int alloc_flags)
     if (alloc_flags & ALLOC_HUGE) {
         page =  delete_from_free(1);
         if (page == NULL) {
-            unlock_page_lock_rest(lock);
+            unlock_page_lock_env(lock);
             return NULL;
         }
     }
@@ -587,7 +545,7 @@ struct page_info *page_alloc(int alloc_flags)
             memset(page2kva(page), 0, PAGE_SIZE);
     }
 
-    unlock_page_lock_rest(lock);
+    unlock_page_lock_env(lock);
     return page;
 }
 
@@ -638,11 +596,11 @@ void page_free(struct page_info *pp)
  */
 void page_decref(struct page_info* pp)
 {
-    int lock = lock_page_unlock_rest();
+    int lock = lock_page_unlock_env();
     if (--pp->pp_ref == 0)
         page_free(pp);
 
-    unlock_page_lock_rest(lock);
+    unlock_page_lock_env(lock);
 }
 
 /* Increment the reference count on a page,
@@ -650,9 +608,9 @@ void page_decref(struct page_info* pp)
  */
 void page_increm(struct page_info* pp)
 {
-    int lock = lock_page_unlock_rest();
+    int lock = lock_page_unlock_env();
     pp->pp_ref++;
-    unlock_page_lock_rest(lock);
+    unlock_page_lock_env(lock);
 }
 
 /*
@@ -669,7 +627,7 @@ void page_increm(struct page_info* pp)
 static void boot_map_region(struct page_table *pml4, uintptr_t va, size_t size,
     physaddr_t pa, uint64_t perm)
 {
-    int lock = unlock_kernel_env();
+    int lock = pmap_unlock_env();
     uintptr_t vi, pi;
     physaddr_t *addr;
 
@@ -678,7 +636,7 @@ static void boot_map_region(struct page_table *pml4, uintptr_t va, size_t size,
         *addr = pi | perm | PAGE_PRESENT;
     }
 
-    lock_kernel_env(lock);
+    pmap_lock_env(lock);
 }
 
 /*
@@ -687,7 +645,7 @@ static void boot_map_region(struct page_table *pml4, uintptr_t va, size_t size,
  */
 static void boot_map_kernel(struct elf *elf_hdr)
 {
-    int lock = unlock_kernel_env();
+    int lock = pmap_unlock_env();
     struct elf_proghdr *prog_hdr, next;
     prog_hdr = (struct elf_proghdr *)((char *)elf_hdr + elf_hdr->e_phoff);
     int i = 0;
@@ -716,7 +674,7 @@ static void boot_map_kernel(struct elf *elf_hdr)
                         next.p_pa, flags);
     }
 
-    lock_kernel_env(lock);
+    pmap_lock_env(lock);
 }
 
 /* Check if 'entry' is an entry pointing to a table or still empty
@@ -776,14 +734,14 @@ int entry_in_table(physaddr_t *entry, int create)
  */
 physaddr_t *page_walk(struct page_table *pml4, const void *va, int create)
 {
-    int lock = unlock_kernel_env();
+    int lock = pmap_unlock_env();
     struct page_table *pdp, *pd, *pt;
     physaddr_t *entry;
 
     // Pml4 entry. Check if exists, if not create new entry + table if possible
     entry = pml4->entries + PML4_INDEX((uintptr_t) va);
     if (!entry_in_table(entry, create)) {
-        lock_kernel_env(lock);
+        pmap_lock_env(lock);
         return NULL;
     }
 
@@ -791,7 +749,7 @@ physaddr_t *page_walk(struct page_table *pml4, const void *va, int create)
     pdp = (struct page_table *)KADDR(PAGE_ADDR(*entry));
     entry = pdp->entries + PDPT_INDEX((uintptr_t) va);
     if (!entry_in_table(entry, create)) {
-        lock_kernel_env(lock);
+        pmap_lock_env(lock);
         return NULL;
     }
 
@@ -803,7 +761,7 @@ physaddr_t *page_walk(struct page_table *pml4, const void *va, int create)
     // If create == 0, we can still be searching for huge pages!
     if (create != CREATE_HUGE && !(!create && (*entry & PAGE_HUGE))) {
         if (!entry_in_table(entry, create)) {
-            lock_kernel_env(lock);
+            pmap_lock_env(lock);
             return NULL;
         }
 
@@ -816,7 +774,7 @@ physaddr_t *page_walk(struct page_table *pml4, const void *va, int create)
     if (!(*entry & PAGE_PRESENT)) {
         // Can not create new page
         if (!create) {
-            lock_kernel_env(lock);
+            pmap_lock_env(lock);
             return NULL;
         }
         // Create new page entry
@@ -825,7 +783,7 @@ physaddr_t *page_walk(struct page_table *pml4, const void *va, int create)
         }
     }
 
-    lock_kernel_env(lock);
+    pmap_lock_env(lock);
     return entry;
 }
 
@@ -859,7 +817,7 @@ int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int per
     physaddr_t *addr;
     struct page_info *page;
 
-    int lock = unlock_kernel_env();
+    int lock = pmap_unlock_env();
 
     // Get page table entry
     if (pp->is_huge == 0) {
@@ -870,7 +828,7 @@ int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int per
 
     // Could not get page table entry for some reason, error
     if (addr == NULL) {
-        lock_kernel_env(lock);
+        pmap_lock_env(lock);
         return -E_NO_MEM;
     }
 
@@ -881,7 +839,7 @@ int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int per
         page_remove(pml4, va);
     }
 
-    int lock1 = lock_page_unlock_rest();
+    int lock1 = lock_page_unlock_env();
 
     // Remove it from freelist if it was free before
     if (pp->pp_ref == 0 && pp->is_available == 1) {
@@ -905,13 +863,13 @@ int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int per
         pp->previous = NULL;
     }
 
-    unlock_page_lock_rest(lock1);
+    unlock_page_lock_env(lock1);
 
     // Link page table entry to new page, PAGE_HUGE is handled via perm argument
     page_increm(pp);
     // pp->pp_ref++;
     *addr = page2pa(pp) | perm | PAGE_PRESENT;
-    lock_kernel_env(lock);
+    pmap_lock_env(lock);
     return 0;
 }
 
@@ -929,14 +887,14 @@ int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int per
 struct page_info *page_lookup(struct page_table *pml4, void *va,
     physaddr_t **entry_store)
 {
-    int lock = unlock_kernel_env();
+    int lock = pmap_unlock_env();
     physaddr_t *addr;
 
     // Get address of page table entry
     addr = page_walk(pml4, va, 0);
 
     if (addr == NULL || *addr == 0) {
-        lock_kernel_env(lock);
+        pmap_lock_env(lock);
         return NULL;
     } else {
         // Save page table entry physical address
@@ -944,7 +902,7 @@ struct page_info *page_lookup(struct page_table *pml4, void *va,
             *entry_store = addr;
         }
 
-        lock_kernel_env(lock);
+        pmap_lock_env(lock);
 
         // Get address of page and return page itself
         return pa2page(PAGE_ADDR(*addr));
@@ -968,7 +926,7 @@ struct page_info *page_lookup(struct page_table *pml4, void *va,
  */
 void page_remove(struct page_table *pml4, void *va)
 {
-    int lock = unlock_kernel_env();
+    int lock = pmap_unlock_env();
     struct page_info *page;
     physaddr_t *pt_entry = NULL;
 
@@ -976,7 +934,7 @@ void page_remove(struct page_table *pml4, void *va)
     page = page_lookup(pml4, va, &pt_entry);
 
     if (page == NULL) {
-        lock_kernel_env(lock);
+        pmap_lock_env(lock);
         return;
     }
 
@@ -989,7 +947,7 @@ void page_remove(struct page_table *pml4, void *va)
     // Invalidate tlb
     tlb_invalidate(pml4, va);
 
-    lock_kernel_env(lock);
+    pmap_lock_env(lock);
 }
 
 /*
@@ -998,7 +956,7 @@ void page_remove(struct page_table *pml4, void *va)
  */
 void tlb_invalidate(struct page_table *pml4, void *va)
 {
-    int lock = lock_page_unlock_rest();
+    int lock = lock_page_unlock_env();
 
     /* Flush the entry only if we're modifying the current address space. */
     // cprintf("curent: %llx\n", curenv);
@@ -1007,7 +965,7 @@ void tlb_invalidate(struct page_table *pml4, void *va)
         flush_page(va);
     }
 
-    unlock_page_lock_rest(lock);
+    unlock_page_lock_env(lock);
 }
 
 /*
@@ -1133,14 +1091,14 @@ int user_mem_check(struct env *env, const void *va, size_t len, int perm)
  */
 void user_mem_assert(struct env *env, const void *va, size_t len, int perm)
 {
-    int lock = unlock_kernel_env();
+    int lock = pmap_unlock_env();
     if (user_mem_check(env, va, len, perm | PAGE_USER) < 0) {
         cprintf("[%08x] user_mem_check assertion failure for "
             "va %08x\n", env->env_id, user_mem_check_addr);
         env_destroy(env);   /* may not return */
     }
 
-    lock_kernel_env(lock);
+    pmap_lock_env(lock);
 }
 
 /***************************************************************
