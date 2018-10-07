@@ -37,4 +37,3 @@ int cprintf(const char *fmt, ...)
 
     return cnt;
 }
-

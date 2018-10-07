@@ -50,10 +50,6 @@ void kmain(struct boot_info *boot_info)
     lock_master();
     cprintf("[MAIN] lock master finish\n");
 
-    cprintf("[MAIN] lock kernel start\n");
-    lock_kernel();
-    cprintf("[MAIN] lock kernel finish\n");
-
     // Lock scheduler until all envs are added
     cprintf("[MAIN] lock env start\n");
     lock_env();
@@ -80,17 +76,12 @@ void kmain(struct boot_info *boot_info)
     unlock_env();
     cprintf("[MAIN] unlock env finish\n");
 
-    cprintf("[MAIN] unlock kernel start\n");
-    unlock_kernel();
-    cprintf("[MAIN] unlock kernel finish\n");
-
     cprintf("[MAIN] unlock master start\n");
     unlock_master();
     cprintf("[MAIN] unlock master finish\n");
 
     /* We only have one user environment for now, so just run it. */
     sched_yield();
-    // env_run(&envs[0]);
 }
 
 /*

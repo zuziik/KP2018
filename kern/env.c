@@ -25,71 +25,71 @@ struct env *env_free_list;          /* Free environment list */
 
 #define ENVGENSHIFT 12      /* >= LOGNENV */
 
-int unlock_kernel_lock_env() {
+int local_lock_env() {
     int kern = 0;
-    if (holding(&kernel_lock)) {
-        kern += 1;
-        cprintf("[unlock_kernel_lock_env] unlock kernel start\n");
-        unlock_kernel();
-        cprintf("[unlock_kernel_lock_env] unlock kernel finish\n");
-    }
+    // if (holding(&kernel_lock)) {
+    //     kern += 1;
+    //     cprintf("[unlock_kernel_lock_env] unlock kernel start\n");
+    //     unlock_kernel();
+    //     cprintf("[unlock_kernel_lock_env] unlock kernel finish\n");
+    // }
 
     if (!holding(&env_lock)) {
         kern += 2;
-        cprintf("[unlock_kernel_lock_env] lock env start\n");
+        cprintf("[lock_env] lock env start\n");
         lock_env();
-        cprintf("[unlock_kernel_lock_env] lock env finish\n");
+        cprintf("[lock_env] lock env finish\n");
     }
 
     return kern;
 }
 
-void lock_kernel_unlock_env(int kern) {
+void local_unlock_env(int kern) {
     if (kern > 1) {
-        cprintf("[lock_kernel_unlock_env] unlock env start\n");
+        cprintf("[unlock_env] unlock env start\n");
         unlock_env();
-        cprintf("[lock_kernel_unlock_env] unlock env finish\n");
+        cprintf("[unlock_env] unlock env finish\n");
     }
     
-    if (kern == 1 || kern == 3) {
-        cprintf("[lock_kernel_unlock_env] lock kernel start\n");
-        lock_kernel();
-        cprintf("[lock_kernel_unlock_env] lock kernel finish\n");
-    }
+    // if (kern == 1 || kern == 3) {
+    //     cprintf("[lock_kernel_unlock_env] lock kernel start\n");
+    //     lock_kernel();
+    //     cprintf("[lock_kernel_unlock_env] lock kernel finish\n");
+    // }
 }
 
-int lock_kernel_lock_env() {
-    int kern = 0;
-    if (!holding(&kernel_lock)) {
-        kern += 1;
-        cprintf("[lock_kernel_lock_env] lock kernel start\n");
-        lock_kernel();
-        cprintf("[lock_kernel_lock_env] lock kernel finish\n");
-    }
+// int lock_kernel_lock_env() {
+//     int kern = 0;
+//     // if (!holding(&kernel_lock)) {
+//     //     kern += 1;
+//     //     cprintf("[lock_kernel_lock_env] lock kernel start\n");
+//     //     lock_kernel();
+//     //     cprintf("[lock_kernel_lock_env] lock kernel finish\n");
+//     // }
 
-    if (!holding(&env_lock)) {
-        kern += 2;
-        cprintf("[lock_kernel_lock_env] lock env start\n");
-        lock_env();
-        cprintf("[lock_kernel_lock_env] lock env finish\n");
-    }
+//     if (!holding(&env_lock)) {
+//         kern += 2;
+//         cprintf("[lock_kernel_lock_env] lock env start\n");
+//         lock_env();
+//         cprintf("[lock_kernel_lock_env] lock env finish\n");
+//     }
 
-    return kern;
-}
+//     return kern;
+// }
 
-void unlock_kernel_unlock_env(int kern) {
-    if (kern > 1) {
-        cprintf("[unlock_kernel_unlock_env] unlock env start\n");
-        unlock_env();
-        cprintf("[unlock_kernel_unlock_env] unlock env finish\n");
-    }
+// void unlock_kernel_unlock_env(int kern) {
+//     if (kern > 1) {
+//         cprintf("[unlock_kernel_unlock_env] unlock env start\n");
+//         unlock_env();
+//         cprintf("[unlock_kernel_unlock_env] unlock env finish\n");
+//     }
 
-    if (kern == 1 || kern == 3) {
-        cprintf("[unlock_kernel_unlock_env] unlock kernel start\n");
-        unlock_kernel();
-        cprintf("[unlock_kernel_unlock_env] unlock kernel finish\n");
-    }
-}
+//     // if (kern == 1 || kern == 3) {
+//     //     cprintf("[unlock_kernel_unlock_env] unlock kernel start\n");
+//     //     unlock_kernel();
+//     //     cprintf("[unlock_kernel_unlock_env] unlock kernel finish\n");
+//     // }
+// }
 
 /*
  * Converts an envid to an env pointer.
@@ -105,13 +105,13 @@ int envid2env(envid_t envid, struct env **env_store, bool checkperm)
 {
     struct env *e;
 
-    int kern = unlock_kernel_lock_env();
+    int kern = local_lock_env();
     assert_lock_env();
 
     /* If envid is zero, return the current environment. */
     if (envid == 0) {
         *env_store = curenv;
-        lock_kernel_unlock_env(kern);
+        local_unlock_env(kern);
         return 0;
     }
 
@@ -125,7 +125,7 @@ int envid2env(envid_t envid, struct env **env_store, bool checkperm)
     e = &envs[ENVX(envid)];
     if (e->env_status == ENV_FREE || e->env_id != envid) {
         *env_store = 0;
-        lock_kernel_unlock_env(kern);
+        local_unlock_env(kern);
         return -E_BAD_ENV;
     }
 
@@ -138,12 +138,12 @@ int envid2env(envid_t envid, struct env **env_store, bool checkperm)
      */
     if (checkperm && e != curenv && e->env_parent_id != curenv->env_id) {
         *env_store = 0;
-        lock_kernel_unlock_env(kern);
+        local_unlock_env(kern);
         return -E_BAD_ENV;
     }
 
     *env_store = e;
-    lock_kernel_unlock_env(kern);
+    local_unlock_env(kern);
     return 0;
 }
 
@@ -274,25 +274,25 @@ static int env_setup_vma(struct env *e) {
 int env_alloc(struct env **newenv_store, envid_t parent_id)
 {
     cprintf("[ENV ALLOC] start\n");
-    int kern = lock_kernel_lock_env();
+    int kern = local_lock_env();
     int32_t generation;
     int r;
     struct env *e;
 
     if (!(e = env_free_list)) {
-        unlock_kernel_unlock_env(kern);
+        local_unlock_env(kern);
         return -E_NO_FREE_ENV;
     }
 
     /* Allocate and set up the page directory for this environment. */
     if ((r = env_setup_vm(e)) < 0) {
-        unlock_kernel_unlock_env(kern);
+        local_unlock_env(kern);
         return r;
     }
 
     /* Set up list of VMAs for this environment. */
     if ((r = env_setup_vma(e)) < 0) {
-        unlock_kernel_unlock_env(kern);
+        local_unlock_env(kern);
         return r;
     }
 
@@ -347,7 +347,7 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     *newenv_store = e;
 
     cprintf("[%08x] new env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
-    unlock_kernel_unlock_env(kern);
+    local_unlock_env(kern);
     cprintf("[ENV ALLOC] end\n");
     return 0;
 }
@@ -514,7 +514,7 @@ void env_create(uint8_t *binary, enum env_type type)
 {
     /* LAB 3: your code here. */
     cprintf("[ENV CREATE] start\n");
-    int kern = lock_kernel_lock_env();
+    int kern = local_lock_env();
     struct env *e;
     int res;
 
@@ -534,7 +534,7 @@ void env_create(uint8_t *binary, enum env_type type)
         panic("Error in env_alloc");
     }
 
-    unlock_kernel_unlock_env(kern);
+    local_unlock_env(kern);
     cprintf("[ENV CREATE] end\n");
 }
 
@@ -576,7 +576,7 @@ void env_free_page_tables(struct page_table *page_table, size_t depth)
  */
 void env_free(struct env *e)
 {
-    int kern = lock_kernel_lock_env();
+    int kern = local_lock_env();
     /* If freeing the current environment, switch to kern_pgdir
      * before freeing the page directory, just in case the page
      * gets reused. */
@@ -597,7 +597,7 @@ void env_free(struct env *e)
     e->env_link = env_free_list;
     env_free_list = e;
 
-    unlock_kernel_unlock_env(kern);
+    local_unlock_env(kern);
 }
 
 /*
@@ -607,7 +607,7 @@ void env_free(struct env *e)
  */
 void env_destroy(struct env *e)
 {
-    int kern = lock_kernel_lock_env();
+    int kern = local_lock_env();
     assert_lock_env();
 
     /* If e is currently running on other CPUs, we change its state to
@@ -623,20 +623,18 @@ void env_destroy(struct env *e)
     if (curenv == e) {
         curenv = NULL;
 
-        cprintf("[ENV_DESTROY] unlock env start\n");
-        unlock_env();
-        cprintf("[ENV_DESTROY] unlock env finish\n");
+        // cprintf("[ENV_DESTROY] unlock env start\n");
+        // unlock_env();
+        // cprintf("[ENV_DESTROY] unlock env finish\n");
 
-        cprintf("[ENV_DESTROY] unlock kernel start\n");
-        unlock_kernel();
-        cprintf("[ENV_DESTROY] unlock kernel finish\n");
+        // cprintf("[ENV_DESTROY] unlock kernel start\n");
+        // unlock_kernel();
+        // cprintf("[ENV_DESTROY] unlock kernel finish\n");
 
         sched_yield();
-
-        panic("ENV_DESTROY aaaaaa\n");
     }
 
-    unlock_kernel_unlock_env(kern);
+    local_unlock_env(kern);
 }
 
 /*
@@ -690,15 +688,11 @@ void env_run(struct env *e)
     /* LAB 3: your code here. */
     cprintf("[ENV RUN] start\n");
 
-    if (holding(&kernel_lock)) {
-        panic("HOLDING KERNEL LOCK IN ENV_RUN!\n");
-    }
+    // if (holding(&kernel_lock)) {
+    //     panic("HOLDING KERNEL LOCK IN ENV_RUN!\n");
+    // }
 
-    if (!holding(&env_lock)) {
-        cprintf("[ENV_RUN] lock env start\n");
-        lock_env();
-        cprintf("[ENV_RUN] lock env finish\n");
-    }
+    int lock = local_lock_env();
 
     // If there is any already running environment, make it runnable
     if ((curenv != NULL) && (curenv->env_status == ENV_RUNNING))

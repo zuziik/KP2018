@@ -192,15 +192,15 @@ void int_dispatch(struct int_frame *frame)
          */
         lapic_eoi();
 
-        cprintf("[INT_DISPATCH] unlock kernel start\n");
-        unlock_kernel();
-        cprintf("[INT_DISPATCH] unlock kernel finish\n");
+        // cprintf("[INT_DISPATCH] unlock kernel start\n");
+        // unlock_kernel();
+        // cprintf("[INT_DISPATCH] unlock kernel finish\n");
 
         sched_yield();
 
-        cprintf("[INT_DISPATCH] lock kernel start\n");
-        lock_kernel();
-        cprintf("[INT_DISPATCH] lock kernel finish\n");
+        // cprintf("[INT_DISPATCH] lock kernel start\n");
+        // lock_kernel();
+        // cprintf("[INT_DISPATCH] lock kernel finish\n");
         break;
     case IRQ_SPURIOUS:
         cprintf("Spurious interrupt on IRQ #7.\n");
@@ -258,11 +258,11 @@ void int_handler(struct int_frame *frame)
     //     lock_kernel();
     //     cprintf("[INT_HANDLER 0] lock kernel finish\n");
     // }
-    if (holding(&kernel_lock)) {
-        cprintf("[INT_HANDLER] unlock kernel start\n");
-        unlock_kernel();
-        cprintf("[INT_HANDLER] unlock kernel finish\n");
-    }
+    // if (holding(&kernel_lock)) {
+    //     cprintf("[INT_HANDLER] unlock kernel start\n");
+    //     unlock_kernel();
+    //     cprintf("[INT_HANDLER] unlock kernel finish\n");
+    // }
 
     /* Check that interrupts are disabled.
      * If this assertion fails, DO NOT be tempted to fix it by inserting a "cli"
@@ -311,16 +311,16 @@ void int_handler(struct int_frame *frame)
         frame = &curenv->env_frame;
     }
 
-    cprintf("[INT_HANDLER] lock kernel start\n");
-    lock_kernel();
-    cprintf("[INT_HANDLER] lock kernel finish\n");
+    // cprintf("[INT_HANDLER] lock kernel start\n");
+    // lock_kernel();
+    // cprintf("[INT_HANDLER] lock kernel finish\n");
 
     /* Dispatch based on the type of interrupt that occurred. */
     int_dispatch(frame);
 
-    cprintf("[INT_HANDLER] unlock kernel start\n");
-    unlock_kernel();
-    cprintf("[INT_HANDLER] unlock kernel finish\n");
+    // cprintf("[INT_HANDLER] unlock kernel start\n");
+    // unlock_kernel();
+    // cprintf("[INT_HANDLER] unlock kernel finish\n");
 
     /* If we made it to this point, then no other environment was scheduled, so
      * we should return to the current environment if doing so makes sense. */

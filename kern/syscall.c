@@ -196,15 +196,15 @@ static int sys_vma_destroy(void *va, size_t size)
  */
 static void sys_yield(void)
 {
-    cprintf("[SYS_YIELD] unlock kernel start\n");
-    unlock_kernel();
-    cprintf("[SYS_YIELD] unlock kernel finish\n");
+    // cprintf("[SYS_YIELD] unlock kernel start\n");
+    // unlock_kernel();
+    // cprintf("[SYS_YIELD] unlock kernel finish\n");
 
     sched_yield();
 
-    cprintf("[SYS_YIELD] lock kernel start\n");
-    lock_kernel();
-    cprintf("[SYS_YIELD] lock kernel finish\n");
+    // cprintf("[SYS_YIELD] lock kernel start\n");
+    // lock_kernel();
+    // cprintf("[SYS_YIELD] lock kernel finish\n");
 }
 
 /* Pause curenv and run the env with envid
@@ -220,15 +220,15 @@ static int sys_wait(envid_t envid)
     // Let curenv wait and reschedule immediately
     curenv->pause = envid;
 
-    cprintf("[SYS_WAIT] unlock kernel start\n");
-    unlock_kernel();
-    cprintf("[SYS_WAIT] unlock kernel finish\n");
+    // cprintf("[SYS_WAIT] unlock kernel start\n");
+    // unlock_kernel();
+    // cprintf("[SYS_WAIT] unlock kernel finish\n");
 
     sched_yield();
 
-    cprintf("[SYS_WAIT] lock kernel start\n");
-    lock_kernel();
-    cprintf("[SYS_WAIT] lock kernel finish\n");
+    // cprintf("[SYS_WAIT] lock kernel start\n");
+    // lock_kernel();
+    // cprintf("[SYS_WAIT] lock kernel finish\n");
     return 0;
 }
 

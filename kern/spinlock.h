@@ -12,7 +12,7 @@
  * LAB 6: Comment out the following macro definition
  *        when you are ready to move to fine-grained locking.
  */
-#define USE_BIG_KERNEL_LOCK 1
+// #define USE_BIG_KERNEL_LOCK 1
 
 /* Mutual exclusion lock. */
 struct spinlock {
@@ -57,16 +57,20 @@ static inline void unlock_kernel(void)
     asm volatile("pause");
 }
 
-// static inline void lock_pagealloc(void) { }
-// static inline void unlock_pagealloc(void) { }
-// static inline void lock_env(void) { }
-// static inline void unlock_env(void) { }
-// static inline void lock_console(void) { }
-// static inline void unlock_console(void) { }
+static inline void lock_pagealloc(void) { }
+static inline void unlock_pagealloc(void) { }
+static inline void lock_env(void) { }
+static inline void unlock_env(void) { }
+static inline void lock_console(void) { }
+static inline void unlock_console(void) { }
+static inline void lock_master(void) { }
+static inline void unlock_master(void) { }
 
 static inline void assert_lock_env(void) { }
 
-//-----------------------------------------------------TOP----------------
+
+#else  /* USE_BIG_KERNEL_LOCK */
+
 extern struct spinlock pagealloc_lock;
 extern struct spinlock env_lock;
 extern struct spinlock console_lock;
@@ -78,24 +82,10 @@ static inline void lock_env(void) { spin_lock(&env_lock); }
 static inline void unlock_env(void) { spin_unlock(&env_lock); asm volatile("pause"); }
 static inline void lock_console(void) { spin_lock(&console_lock); }
 static inline void unlock_console(void) { spin_unlock(&console_lock); asm volatile("pause"); }
-static inline void lock_master(void) { spin_lock(&master_lock); }
-static inline void unlock_master(void) { spin_unlock(&master_lock); asm volatile("pause"); }
-
-//-------------------------------------------------------BOT--------------
-#else  /* USE_BIG_KERNEL_LOCK */
-
-extern struct spinlock pagealloc_lock;
-extern struct spinlock env_lock;
-extern struct spinlock console_lock;
-
-static inline void lock_pagealloc(void) { spin_lock(&pagealloc_lock); }
-static inline void unlock_pagealloc(void) { spin_unlock(&pagealloc_lock); asm volatile("pause"); }
-static inline void lock_env(void) { spin_lock(&env_lock); }
-static inline void unlock_env(void) { spin_unlock(&env_lock); asm volatile("pause"); }
-static inline void lock_console(void) { spin_lock(&console_lock); }
-static inline void unlock_console(void) { spin_unlock(&console_lock); asm volatile("pause"); }
 static inline void lock_kernel(void) { }
 static inline void unlock_kernel(void) { }
+static inline void lock_master(void) { spin_lock(&master_lock); }
+static inline void unlock_master(void) { spin_unlock(&master_lock); asm volatile("pause"); }
 
 
 #ifdef DEBUG_SPINLOCK

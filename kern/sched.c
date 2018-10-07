@@ -38,14 +38,12 @@ void reset_pause(envid_t env_id) {
  */
 void sched_yield(void)
 {
-    if (holding(&kernel_lock)) {
-        panic("HOLDING KERNEL LOCK IN SCHED!\n");
+    if (!holding(&env_lock)) {
+        cprintf("[SCHED_YIELD] lock env start\n");
+        lock_env();
+        cprintf("[SCHED_YIELD] lock env finish\n");
     }
-
-    cprintf("[SCHED_YIELD] lock env start\n");
-    lock_env();
-    cprintf("[SCHED_YIELD] lock env finish\n");
-
+    
     cprintf("[SCHED_YIELD] start\n\n");
     struct env *env = NULL;
     int curenv_i, i;

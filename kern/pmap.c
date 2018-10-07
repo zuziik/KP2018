@@ -49,12 +49,12 @@ int lock_page_unlock_rest() {
             // cprintf("[lock_page_unlock_rest] unlock env finish\n");
         }
 
-        if (holding(&kernel_lock)) {
-            lock += 2;
-            // cprintf("[lock_page_unlock_rest] unlock kernel start\n");
-            unlock_kernel();
-            // cprintf("[lock_page_unlock_rest] unlock kernel finish\n");
-        }
+        // if (holding(&kernel_lock)) {
+        //     lock += 2;
+        //     // cprintf("[lock_page_unlock_rest] unlock kernel start\n");
+        //     unlock_kernel();
+        //     // cprintf("[lock_page_unlock_rest] unlock kernel finish\n");
+        // }
     }
 
     if (!holding(&pagealloc_lock)) {
@@ -74,11 +74,11 @@ void unlock_page_lock_rest(int lock) {
         // cprintf("[unlock_page_lock_rest] unlock pagealloc finish\n");
     }
 
-    if (lock == 2 || lock == 3 || lock > 5) {
-        // cprintf("[unlock_page_lock_rest] lock kernel start\n");
-        lock_kernel();
-        // cprintf("[unlock_page_lock_rest] lock kernel finish\n");
-    }
+    // if (lock == 2 || lock == 3 || lock > 5) {
+    //     // cprintf("[unlock_page_lock_rest] lock kernel start\n");
+    //     lock_kernel();
+    //     // cprintf("[unlock_page_lock_rest] lock kernel finish\n");
+    // }
 
     if (lock % 2 == 1) {
         // cprintf("[unlock_page_lock_rest] lock env start\n");
@@ -101,22 +101,22 @@ int unlock_kernel_env() {
         // cprintf("[unlock_kernel_env] unlock env finish\n");
     }
 
-    if (holding(&kernel_lock)) {
-        lock += 2;
-        // cprintf("[unlock_kernel_env] unlock kernel start\n");
-        unlock_kernel();
-        // cprintf("[unlock_kernel_env] unlock kernel finish\n");
-    }
+    // if (holding(&kernel_lock)) {
+    //     lock += 2;
+    //     // cprintf("[unlock_kernel_env] unlock kernel start\n");
+    //     unlock_kernel();
+    //     // cprintf("[unlock_kernel_env] unlock kernel finish\n");
+    // }
 
     return lock;
 }
 
 void lock_kernel_env(int lock) {
-    if (lock > 1) {
-        // cprintf("[lock_kernel_env] lock kernel start\n");
-        lock_kernel();
-        // cprintf("[lock_kernel_env] lock kernel finish\n");
-    }
+    // if (lock > 1) {
+    //     // cprintf("[lock_kernel_env] lock kernel start\n");
+    //     lock_kernel();
+    //     // cprintf("[lock_kernel_env] lock kernel finish\n");
+    // }
 
     if (lock == 1) {
         // cprintf("[lock_kernel_env] lock env start\n");
