@@ -48,13 +48,21 @@ void sched_yield(void)
     int64_t time = read_tsc();
     int64_t diff;
 
-    // Just destroyed the previous current env
+    // First time running something on this cpu
     if (curenv == NULL) {
-        curenv_i = get_env_index(env_free_list->env_id);
+        curenv_i = 0;
+    }
+    // Curenv was just destroyed
+    else if (curenv->env_status == ENV_FREE) {
+        curenv_i = get_env_index(curenv->env_id);
 
         // Curenv just finished so reset the envs which were paused
-        reset_pause(env_free_list->env_id);
-    } else {
+        reset_pause(curenv_i);
+
+        curenv = NULL;
+    }
+    // Curenv just ran, check if its timeslice is done
+    else if (curenv->env_status == ENV_RUNNING && curenv->env_cpunum != cpunum()) {
         // curenv just ran succesfully
         curenv_i = get_env_index(curenv->env_id);
 
@@ -79,21 +87,18 @@ void sched_yield(void)
             curenv->timeslice = 0;
             curenv->prev_time = time;
         }
+    } 
+    // curenv after a kernel thread just ran
+    else {
+        curenv_i = get_env_index(curenv->env_id);
     }
 
     // Corner case: curenv is last env so go circular
     i = (curenv_i + 1) % NENV;
 
-    //------------------------------------ TOP -----------------------------------------
-    /* Note: timeslice and prev_time are only used for interval when to call 
-     * a certain kernel env again, not to check if it has to stop!
-     */
-    // NOTE 2: CURENV DIDNT GET CHANGED WHEN CALLING A KERNEL THREAD
-    //         THIS CAN CAUSE BIG PROBLEMS? maybe
-
-    // Update timeslices
+    // Update timeslices of runnable kthreads
     for (j = 0; j < 32; j++) {
-        if (kthreads[i].kt_id != -1) {
+        if (kthreads[i].kt_id != -1 && kthreads[i].kt_status == ENV_RUNNABLE) {
             if (time >= kthreads[i].prev_time) 
                 diff =  time - kthreads[i].prev_time;
             else
@@ -111,8 +116,6 @@ void sched_yield(void)
             break;      // comment this out, only while it doesnt work yet
         }
     }
-
-    //------------------------------------ BOT -----------------------------------------
 
     /*
      * Implement simple round-robin scheduling.
@@ -149,8 +152,12 @@ void sched_yield(void)
     // No runnable envs found, use current if running or runnable
     if (i == curenv_i && curenv != NULL && curenv->pause < 0 &&
         (curenv->env_status == ENV_RUNNING || curenv->env_status == ENV_RUNNABLE)) {
-        cprintf("[SCHED_YIELD] curenv new\n");
-        env = curenv;
+        if (curenv->env_cpunum != cpunum()) {
+            cprintf("[SCHED_YIELD] started running on different cpu\n");
+        } else {
+            cprintf("[SCHED_YIELD] curenv new\n");
+            env = curenv;
+        }
     }
 
     // Run the env

@@ -20,11 +20,14 @@
 #include <kern/vma.h>
 
 struct env *envs = NULL;            /* All environments */
-struct env *env_free_list;          /* Free environment list */            
+static struct env *env_free_list;          /* Free environment list */            
                                     /* (linked by env->env_link) */
 struct kthread *kthreads = NULL;
 
 #define ENVGENSHIFT 12      /* >= LOGNENV */
+
+int local_lock_env();
+void local_unlock_env(int kern);
 
 void kthread_create() {
     int id = 0;
@@ -53,24 +56,84 @@ void kthread_create() {
     // Set frame to 0 to prevent leaking
     memset(&kthreads[i].kt_frame, 0, sizeof kthreads[i].kt_frame);
 
-    // TODO
     // Set registers
+    // ...
+
     // Set interrupt flags
+    // ...
 }
 
 // Start a kernel thread
 void kthread_run(struct kthread *kt)
 {
-    /* LAB 3: your code here. */
     cprintf("[KTHREAD_RUN] start\n");
+    return;
 
-    // int lock = local_lock_env();
+    int lock = local_lock_env();
+    kt->kt_status = ENV_RUNNING;
 
-    // set things
+    // Set env to runnable
+    if ((curenv != NULL) && (curenv->env_status == ENV_RUNNING))
+        curenv->env_status = ENV_RUNNABLE;
 
-    // unlock_env();
+    // set regs
+    // ...
+
+    unlock_env();
 
     // start running
+    // ...
+}
+
+// Kernel thread interrupted itself, save state and call scheduler again
+void kthread_interrupt(struct kthread *kt)
+{
+    cprintf("[KTHREAD_RUN] start\n");
+    return;
+
+    int lock = local_lock_env();
+
+    // Reset waiting for kt and make it runnable again
+    kt->timeslice = 100000000;
+    kt->prev_time = read_tsc();
+    kt->kt_status = ENV_RUNNABLE;
+
+    // save registers ...
+    // ...
+
+    unlock_env();
+    sched_yield();
+}
+
+// Kernel thread is finished, reset state and kthread struct
+void kthread_finish(struct kthread *kt)
+{
+    cprintf("[KTHREAD_RUN] start\n");
+    return;
+
+    int lock = local_lock_env();
+
+    // Reset waiting for kt and make it runnable again
+    kt->timeslice = 100000000;
+    kt->prev_time = read_tsc();
+    kt->kt_status = ENV_RUNNABLE;
+
+    // Reset regs so rip points to start of kthread function again
+    // ...
+
+    unlock_env();
+    sched_yield();
+}
+
+// Argument is just tmp because i dont know how to fix this for now
+void kthread_dummy(struct kthread *kt) {
+    cprintf("[KTHREAD_DUMMY] start\n");
+    
+    kthread_interrupt(kt);
+
+    cprintf("[KTHREAD_DUMMY] end\n");
+
+    kthread_finish(kt);
 }
 
 int local_lock_env() {
@@ -624,7 +687,7 @@ void env_destroy(struct env *e)
     env_free(e);
 
     if (curenv == e) {
-        curenv = NULL;
+        // curenv = NULL;
         sched_yield();
     }
 

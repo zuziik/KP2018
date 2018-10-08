@@ -206,6 +206,7 @@ void mem_init(struct boot_info *boot_info)
     cprintf("[start loop]\n");
     for (i = 0; i < 32; i++) {
         kthreads[i].kt_id = -1;
+        kthreads[i].kt_status = ENV_FREE;
     }
 
     /*********************************************************************
