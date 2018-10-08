@@ -68,6 +68,14 @@ struct int_frame {
     uint64_t rip, cs, rflags, rsp, ss;
 };
 
+struct kthread_frame {
+    uint64_t ds;
+    uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
+    uint64_t rdi, rsi, rbp, rbx, rdx, rcx, rax;
+    uint64_t rflags;
+    uint64_t rip, rsp;
+};
+
 static inline void set_idt_entry(struct idt_entry *entry, void *offset,
     unsigned flags, uint16_t sel)
 {

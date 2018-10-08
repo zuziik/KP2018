@@ -78,8 +78,6 @@ isr_common_stub:
     movw %ax, %ds
     movw %ax, %es
 
-    # pushq %rsp
-
     movq %rsp, %rdi
     jmp int_handler
 
@@ -130,3 +128,67 @@ iret64:
 sysret64:
     /* LAB 3: your code here. */
     sysretq
+
+
+.global kthread_save_context
+kthread_save_context:
+
+    # rsp, rip should be pushed automatically if we use call
+
+    pushfq
+
+    pushq %rax
+    pushq %rcx
+    pushq %rdx
+    pushq %rbx
+    pushq %rbp
+    pushq %rsi
+    pushq %rdi
+    pushq %r8
+    pushq %r9
+    pushq %r10
+    pushq %r11
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+
+    /*push %ds*/
+    xor %rax, %rax
+    movw %ds, %ax
+    pushq %rax
+
+    movq %rsp, %rdi
+    jmp kthread_yield
+
+
+.global kthread_restore_context
+kthread_restore_context:
+
+    movq %rdi, %rsp
+    
+    # pop %ds
+    popq %rax
+    movw %ax, %ds
+    movw %ax, %es
+
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %r11
+    popq %r10
+    popq %r9
+    popq %r8
+    popq %rdi
+    popq %rsi
+    popq %rbp
+    popq %rbx
+    popq %rdx
+    popq %rcx
+    popq %rax
+    
+    popfq
+
+    # rip, rsp are restored with retq    
+    retq

@@ -29,7 +29,8 @@ struct kthread *kthreads = NULL;
 int local_lock_env();
 void local_unlock_env(int kern);
 
-void kthread_create() {
+// ZUZANA TODO maybe add arguments for the function
+void kthread_create(void *(*start_routine)) {
     int id = 0;
     int i;
 
@@ -47,8 +48,9 @@ void kthread_create() {
     }
 
     kthreads[i].kt_id = id;
-    kthreads[i].kt_type = ENV_TYPE_USER;            // Needed?
+    kthreads[i].kt_type = ENV_TYPE_USER;            // Needed? ZUZANA it's kernel, not user
     kthreads[i].kt_status = ENV_RUNNABLE;
+    kthreads[i].start_routine = *start_routine;
 
     kthreads[i].timeslice = 100000000;
     kthreads[i].prev_time = 0;
@@ -56,18 +58,21 @@ void kthread_create() {
     // Set frame to 0 to prevent leaking
     memset(&kthreads[i].kt_frame, 0, sizeof kthreads[i].kt_frame);
 
-    // Set registers
-    // ...
+    // registers are OK to be 0 initially
+    kthreads[i].kt_frame.rflags = read_rflags();
 
-    // Set interrupt flags
-    // ...
+    // ZUZANA TODO to reserve VA for this
+    // kthreads[i].kt_frame.rbp = ??
+    // kthreads[i].kt_frame.rsp = ??
+    kthreads[i].kt_frame.rip = (uint64_t) (*start_routine);
+    kthreads[i].kt_frame.ds = GDT_KDATA;
+
 }
 
 // Start a kernel thread
 void kthread_run(struct kthread *kt)
 {
     cprintf("[KTHREAD_RUN] start\n");
-    return;
 
     int lock = local_lock_env();
     kt->kt_status = ENV_RUNNING;
@@ -76,37 +81,43 @@ void kthread_run(struct kthread *kt)
     if ((curenv != NULL) && (curenv->env_status == ENV_RUNNING))
         curenv->env_status = ENV_RUNNABLE;
 
-    // set regs
-    // ...
+    // make this current kernel thread for this CPU
+    curkt = kt;
 
     unlock_env();
 
     // start running
-    // ...
+    kthread_restore_context(&kt->kt_frame);
 }
 
 // Kernel thread interrupted itself, save state and call scheduler again
-void kthread_interrupt(struct kthread *kt)
+void kthread_interrupt()
 {
     cprintf("[KTHREAD_RUN] start\n");
-    return;
 
     int lock = local_lock_env();
 
     // Reset waiting for kt and make it runnable again
-    kt->timeslice = 100000000;
-    kt->prev_time = read_tsc();
-    kt->kt_status = ENV_RUNNABLE;
+    curkt->timeslice = 100000000;
+    curkt->prev_time = read_tsc();
+    curkt->kt_status = ENV_RUNNABLE;
 
-    // save registers ...
-    // ...
+    kthread_save_context();
+    // will return to kthread_yield
+
+}
+
+void kthread_yield(struct kthread_frame kt_frame) {
+
+    curkt->kt_frame = kt_frame;
+    curkt = NULL;
 
     unlock_env();
     sched_yield();
 }
 
 // Kernel thread is finished, reset state and kthread struct
-void kthread_finish(struct kthread *kt)
+void kthread_finish()
 {
     cprintf("[KTHREAD_RUN] start\n");
     return;
@@ -114,27 +125,39 @@ void kthread_finish(struct kthread *kt)
     int lock = local_lock_env();
 
     // Reset waiting for kt and make it runnable again
-    kt->timeslice = 100000000;
-    kt->prev_time = read_tsc();
-    kt->kt_status = ENV_RUNNABLE;
+    curkt->timeslice = 100000000;
+    curkt->prev_time = read_tsc();
+    curkt->kt_status = ENV_RUNNABLE;
 
-    // Reset regs so rip points to start of kthread function again
-    // ...
+    // ZUZANA restore RIP, RSP and RBP (we don't want to overflow the stack)
+    curkt->kt_frame.rip = (uint64_t) curkt->start_routine;
+    // curkt->kt_frame.rsp = ???
+    // curkt->kt_frame.rbp = ???
+
+    curkt = NULL;
 
     unlock_env();
     sched_yield();
 }
 
-// Argument is just tmp because i dont know how to fix this for now
-void kthread_dummy(struct kthread *kt) {
+
+// ------------------------------------------------------------------------------
+// ZUZANA TODO move this to another file kthreads.c or something where all
+// entry functions for kernel threads will be
+void kthread_dummy() {
     cprintf("[KTHREAD_DUMMY] start\n");
     
-    kthread_interrupt(kt);
+    kthread_interrupt();
 
     cprintf("[KTHREAD_DUMMY] end\n");
 
-    kthread_finish(kt);
+    kthread_finish();
 }
+
+// ------------------------------------------------------------------------------
+
+
+
 
 int local_lock_env() {
     int kern = 0;

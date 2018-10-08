@@ -30,6 +30,7 @@ struct cpuinfo {
     uint8_t cpu_id;                /* Local APIC ID; index into cpus[] below */
     volatile unsigned cpu_status;  /* The status of the CPU */
     struct env *cpu_env;           /* The currently-running environment. */
+    struct kthread *cpu_kthread;   /* Recently running kernel thread. */
     struct tss cpu_tss;            /* Used by x86 to find stack for interrupt */
 };
 

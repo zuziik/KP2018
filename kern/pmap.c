@@ -278,6 +278,9 @@ void mem_init(struct boot_info *boot_info)
         ROUNDUP(32 * sizeof(struct kthread), PAGE_SIZE),
         PADDR(kthreads), PAGE_WRITE | PAGE_NO_EXEC);
 
+    // TODO allocate and map memory for kernel thread stacks (it's in kernel
+    // space so no VMA). But how big should 
+
     // physaddr_t *addr1 = page_walk(kern_pml4, (void *)USER_KTHREADS, 0);
 
     /*********************************************************************

@@ -67,9 +67,9 @@ void kmain(struct boot_info *boot_info)
 #endif
 
     // Create some kernel threads
-    kthread_create();
-    kthread_create();
-    kthread_create();
+    kthread_create(&kthread_dummy);
+    kthread_create(&kthread_dummy);
+    kthread_create(&kthread_dummy);
 
     unlock_env();
     unlock_master();
