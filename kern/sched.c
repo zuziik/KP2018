@@ -150,55 +150,25 @@ void sched_yield(void)
         i = (i + 1) % NENV;
     }
 
-    //---------------------------------------------------------------------------
-        //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    // MATTHIJS: BOTTOM ELSE IF CODE + CLAUSE IS ORIGINAL ONE, TOP ONE IS MODIFIED
-    // SO CURENV IS NOT USED SINCE IT DOESNT EXIST, THIS CODE IS ALL WRONG
-    // BUT YOU GET THE IDEA FROM MESSENGER I HOPE
-
-    if (i == curenv_i && curenv->pause < 0 &&
-        (curenv == NULL && (envs[curenv_i]).env_status != ENV_FREE)) && 
-        ((envs[curenv_i]).env_status == ENV_RUNNING || (envs[curenv_i]).env_status == ENV_RUNNABLE) {
-        // After kernel thread: curenv is running on different cpu
-        if ((envs[curenv_i]).env_cpunum != cpunum()) {
-            cprintf("[SCHED_YIELD] started running on different cpu\n");
-        } else {
-            cprintf("[SCHED_YIELD] curenv new\n");
-            env = (envs[curenv_i]);
-        }
-    } else if (i == curenv_i && curenv->pause < 0 && curenv != NULL &&
-        (curenv->env_status == ENV_RUNNING || curenv->env_status == ENV_RUNNABLE)) {
-        // After kernel thread: curenv is running on different cpu
-        if (curenv->env_cpunum != cpunum()) {
-            cprintf("[SCHED_YIELD] started running on different cpu\n");
-        } else {
-            cprintf("[SCHED_YIELD] curenv new\n");
-            env = curenv;
-        }
+    // Edge case: There is only 1 env to run at the start
+    if (i == curenv_i && curenv == NULL && (envs[curenv_i]).env_status == ENV_RUNNABLE) {
+        env = &envs[curenv_i];
     }
-        //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-    //---------------------------------------------------------------------------
-
+    // No env found to run, run curenv again.
+    // Edge case: a kernel thread just ran, a different cpu could have stolen your
+    //            curenv so check if its still assigned to your cpu
+    else if (i == curenv_i && curenv != NULL && curenv->pause < 0 &&
+        (curenv->env_status == ENV_RUNNING || curenv->env_status == ENV_RUNNABLE) &&
+        curenv->env_cpunum == cpunum()) {
+        cprintf("[SCHED_YIELD] curenv new\n");
+        env = curenv;
+    }
 
     // Run the env
     if (env != NULL) {
         cprintf("[SCHED_YIELD] new\n");
         env->timeslice = MAXTIMESLICE;
         env->prev_time = time;
-
         env_run(env);
     }
 

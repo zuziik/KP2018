@@ -636,4 +636,3 @@ void env_run(struct env *e)
     load_pml4((void *)PADDR(curenv->env_pml4));
     env_pop_frame(&curenv->env_frame);
 }
-
