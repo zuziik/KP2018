@@ -3,13 +3,10 @@
 #include <inc/env.h>
 #include <kern/cpu.h>
 
-extern struct env *envs;        	/* All environments */
-static struct env *env_free_list;   /* Free environment list */
-extern struct env *curenv;      	/* Current environment */
-#define curenv (thiscpu->cpu_env)   /* Current environment */
-#define curkt (thiscpu->cpu_kthread)   /* Current environment */
-
-extern struct kthread *kthreads; 	// All kernel threads
+extern struct env *envs;        		/* All environments 	*/
+static struct env *env_free_list;   	/* Free environment list*/
+extern struct env *curenv;      		/* Current environment 	*/
+#define curenv (thiscpu->cpu_env)   	/* Current environment 	*/
 
 void env_init(void);
 void env_init_percpu(void);
@@ -22,12 +19,6 @@ int  envid2env(envid_t envid, struct env **env_store, bool checkperm);
 /* The following two functions do not return */
 void env_run(struct env *e) __attribute__((noreturn));
 void env_pop_frame(struct int_frame *frame) __attribute__((noreturn));
-
-void kthread_save_context();
-void kthread_create(); 					// create a new kthread
-void kthread_restore_context(struct kthread_frame *kt_frame);
-void kthread_run(struct kthread *kt); // start running a kthread
-void kthread_dummy();
 
 /* Without this extra macro, we couldn't pass macros like TEST to ENV_CREATE
  * because of the C pre-processor's argument prescan rule. */

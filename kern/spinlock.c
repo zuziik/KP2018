@@ -42,7 +42,7 @@ struct spinlock master_lock = {
 /*
  * Check whether this CPU is holding the lock.
  */
-int holding(struct spinlock *lock)       // MATTHIJS: removed static
+int holding(struct spinlock *lock)
 {
     return lock->locked && lock->cpu == thiscpu;
 }

@@ -191,16 +191,7 @@ void int_dispatch(struct int_frame *frame)
          * using lapic_eoi() before calling the scheduler! lab 5
          */
         lapic_eoi();
-
-        // cprintf("[INT_DISPATCH] unlock kernel start\n");
-        // unlock_kernel();
-        // cprintf("[INT_DISPATCH] unlock kernel finish\n");
-
         sched_yield();
-
-        // cprintf("[INT_DISPATCH] lock kernel start\n");
-        // lock_kernel();
-        // cprintf("[INT_DISPATCH] lock kernel finish\n");
         break;
     case IRQ_SPURIOUS:
         cprintf("Spurious interrupt on IRQ #7.\n");
@@ -276,7 +267,9 @@ void int_handler(struct int_frame *frame)
         /* Garbage collect if current enviroment is a zombie. */
         if (curenv->env_status == ENV_DYING) {
             env_free(curenv);
-            curenv = NULL;
+
+            reset_pause(get_env_index(curenv->env_id));
+            // curenv = NULL;
 
             sched_yield();
         }
@@ -361,7 +354,7 @@ void page_fault_handler(struct int_frame *frame)
     env_destroy(curenv);
 }
 
-// Protection violation in page fault: check if cow must be used
+// A protection violation was discovered: check if COW must be used
 int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
     cprintf("[PAGE_FAULT_HANDLER] -> COW start\n");
     struct vma *vma;
@@ -409,8 +402,6 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
         memcpy((void *) KADDR(page2pa(new_page)), (void *) KADDR(page2pa(old_page)), PAGE_SIZE);
         page_decref(old_page);
         page_increm(new_page);
-        // old_page->pp_ref--;
-        // new_page->pp_ref++;
         cprintf("[PAGE_FAULT_HANDLER] -> pp_ref | new = %d | old = %d\n", new_page->pp_ref, old_page->pp_ref);
         *pt_entry = page2pa(new_page) | perm;
         cprintf("[PAGE_FAULT_HANDLER] -> cow - copying and changing perms\n");
@@ -420,7 +411,7 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
     return 1;
 }
 
-// Page fault has occured, load the page and map it
+// Do on demand paging after a page fault has occured
 int page_fault_load_page(void *fault_va_aligned) {
     struct vma *vma;
     struct page_info *page;

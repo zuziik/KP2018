@@ -34,8 +34,8 @@ void gdt_init_percpu(void)
      *
      * LAB 6: your code here.
      */
-    // thiscpu->cpu_tss.rsp[0] = KSTACK_TOP;        // lab 3 code
-    // see pmap.c, mem_init_mp for explanation
+    // See pmap.c, mem_init_mp for more explanation
+    // Every cpu has its own stack so use cpu index to calculate the offset to your stack
     thiscpu->cpu_tss.rsp[0] = KSTACK_TOP - i * (KSTACK_SIZE + KSTACK_GAP);
 
     /*

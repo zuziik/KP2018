@@ -74,7 +74,7 @@ int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int per
 void page_remove(struct page_table *pml4, void *va);
 struct page_info *page_lookup(struct page_table *pml4, void *va, physaddr_t **entry);
 void page_decref(struct page_info *pp);
-void page_increm(struct page_info* pp);             // MATTHIJS: added for ease with locks
+void page_increm(struct page_info* pp);
 
 void tlb_invalidate(struct page_table *pml4, void *va);
 

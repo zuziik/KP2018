@@ -8,10 +8,12 @@
 #include <kern/pmap.h>
 #include <kern/monitor.h>
 #include <kern/spinlock.h>
+#include <kern/kthread.h>
 
 void sched_halt(void);
 
-// Return the index of env in the envs list
+// Return the index of the env with id = env_id in the envs list
+// Error: -1 -> env_id does not exist. This is used in syscall.c
 int get_env_index(envid_t env_id) {
     int i;
     for (i = 0; i < NENV; i++) {
@@ -26,7 +28,7 @@ int get_env_index(envid_t env_id) {
 // Reset the pause variable for each env which was waiting on the env with env_id
 void reset_pause(envid_t env_id) {
     int i;
-    for (i = 0; i++; i < NENV) {
+    for (i = 0; i < NENV; i++) {
         if ((&envs[i])->pause == env_id) {
             (&envs[i])->pause = -1;
         }
@@ -55,22 +57,19 @@ void sched_yield(void)
     // Curenv was just destroyed
     else if (curenv->env_status == ENV_FREE) {
         curenv_i = get_env_index(curenv->env_id);
-
-        // Curenv just finished so reset the envs which were paused
-        reset_pause(curenv_i);
-
         curenv = NULL;
     }
-    // Curenv just ran, check if its timeslice is done
+    // Curenv just ran, check if its timeslice is done, else keep running it
     else if (curenv->env_status == ENV_RUNNING && curenv->env_cpunum != cpunum()) {
-        // curenv just ran succesfully
         curenv_i = get_env_index(curenv->env_id);
 
         // Update timeslice of curenv
         if (time >= curenv->prev_time)   
             diff =  time - curenv->prev_time;
-        else
+        else {
+            // 0x100000000 == MAXTIMESLICE in hex
             diff = time - curenv->prev_time + 0x100000000;
+        }
 
         if (curenv->timeslice > diff) {
             curenv->timeslice -= diff;
@@ -80,7 +79,6 @@ void sched_yield(void)
             if (curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
                 cprintf("[SCHED_YIELD] curenv resume\n");
                 env_run(curenv);
-                return;
             }
         }
         else {
@@ -88,7 +86,7 @@ void sched_yield(void)
             curenv->prev_time = time;
         }
     } 
-    // curenv after a kernel thread just ran
+    // A kernel thread just ran, curenv is the last env that ran before the kthread
     else {
         curenv_i = get_env_index(curenv->env_id);
     }
@@ -97,23 +95,26 @@ void sched_yield(void)
     i = (curenv_i + 1) % NENV;
 
     // Update timeslices of runnable kthreads
-    for (j = 0; j < 32; j++) {
-        if (kthreads[i].kt_id != -1 && kthreads[i].kt_status == ENV_RUNNABLE) {
-            if (time >= kthreads[i].prev_time) 
-                diff =  time - kthreads[i].prev_time;
-            else
-                diff = time - kthreads[i].prev_time + 0x100000000;
+    for (j = 0; j < MAX_KTHREADS; j++) {
+        if (kthreads[j].kt_id != -1 && kthreads[j].kt_status == ENV_RUNNABLE) {
+            if (time >= kthreads[j].prev_time) 
+                diff =  time - kthreads[j].prev_time;
+            else {
+                // 0x100000000 == MAXTIMESLICE in hex
+                diff = time - kthreads[j].prev_time + 0x100000000;
+            }
 
-            kthreads[i].timeslice -= diff;
-            kthreads[i].prev_time = time;
+            kthreads[j].timeslice -= diff;
+            kthreads[j].prev_time = time;
         }
     }
 
     // Try to schedule a kthread
-    for (j = 0; j < 32; j++) {
-        if (kthreads[i].kt_id != -1 && kthreads[i].timeslice < 0) {
-            kthread_run(&kthreads[i]);
-            break;      // comment this out, only while it doesnt work yet
+    for (j = 0; j < MAX_KTHREADS; j++) {
+        if (kthreads[j].kt_id != -1 && kthreads[j].timeslice < 0) {
+            cprintf("[SCHED_YIELD] kthread\n");
+            // kthread_run(&kthreads[j]);
+            break;
         }
     }
 
@@ -149,9 +150,29 @@ void sched_yield(void)
         i = (i + 1) % NENV;
     }
 
-    // No runnable envs found, use current if running or runnable
-    if (i == curenv_i && curenv != NULL && curenv->pause < 0 &&
+    //---------------------------------------------------------------------------
+        //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    // MATTHIJS: BOTTOM ELSE IF CODE + CLAUSE IS ORIGINAL ONE, TOP ONE IS MODIFIED
+    // SO CURENV IS NOT USED SINCE IT DOESNT EXIST, THIS CODE IS ALL WRONG
+    // BUT YOU GET THE IDEA FROM MESSENGER I HOPE
+
+    if (i == curenv_i && curenv->pause < 0 &&
+        (curenv == NULL && (envs[curenv_i]).env_status != ENV_FREE)) && 
+        ((envs[curenv_i]).env_status == ENV_RUNNING || (envs[curenv_i]).env_status == ENV_RUNNABLE) {
+        // After kernel thread: curenv is running on different cpu
+        if ((envs[curenv_i]).env_cpunum != cpunum()) {
+            cprintf("[SCHED_YIELD] started running on different cpu\n");
+        } else {
+            cprintf("[SCHED_YIELD] curenv new\n");
+            env = (envs[curenv_i]);
+        }
+    } else if (i == curenv_i && curenv->pause < 0 && curenv != NULL &&
         (curenv->env_status == ENV_RUNNING || curenv->env_status == ENV_RUNNABLE)) {
+        // After kernel thread: curenv is running on different cpu
         if (curenv->env_cpunum != cpunum()) {
             cprintf("[SCHED_YIELD] started running on different cpu\n");
         } else {
@@ -159,15 +180,26 @@ void sched_yield(void)
             env = curenv;
         }
     }
+        //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+
 
     // Run the env
     if (env != NULL) {
         cprintf("[SCHED_YIELD] new\n");
-        env->timeslice = 100000000;
+        env->timeslice = MAXTIMESLICE;
         env->prev_time = time;
 
         env_run(env);
-        return;
     }
 
     /* sched_halt() never returns */

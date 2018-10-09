@@ -31,7 +31,10 @@ typedef int32_t envid_t;
 #define LOG2NENV        10
 #define NENV            (1 << LOG2NENV)
 #define ENVX(envid)     ((envid) & (NENV - 1))
-#define MAXTIMESLICE    100000000                                                                                                                                                                                                                                                  000
+#define MAXTIMESLICE    100000000
+#define MAX_KTHREADS    32
+#define MAX_VMAS        128
+#define MAX_WAITTIME    100000000
 
 /* Values of env_status in struct env */
 enum {
@@ -103,11 +106,11 @@ struct vma {
 
 
 struct kthread {
-    struct kthread_frame kt_frame; /* Saved registers */
-    envid_t kt_id;             /* Unique environment identifier */
-    enum env_type kt_type; /* Indicates special system environments */
-    unsigned kt_status;        /* Status of the environment */
-    int kt_cpunum;             /* The CPU that the env is running on */
+    struct kthread_frame kt_frame;  /* Saved registers */
+    envid_t kt_id;                  /* Unique environment identifier */
+    enum env_type kt_type;          /* Indicates special system environments */
+    unsigned kt_status;             /* Status of the environment */
+    int kt_cpunum;                  /* The CPU that the env is running on */
     void *(*start_routine) ();
 
     // Keep track of the timeslice                     

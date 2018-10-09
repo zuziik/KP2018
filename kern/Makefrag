@@ -39,7 +39,9 @@ KERN_SRCFILES += \
 KERN_SRCFILES += \
 	kern/boot_ap.S \
 	kern/acpi.c \
-	kern/spinlock.c
+	kern/spinlock.c \
+	kern/lock.c \
+	kern/kthread.c
 
 # Only build files if they exist.
 KERN_SRCFILES := $(wildcard $(KERN_SRCFILES))

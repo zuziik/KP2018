@@ -18,167 +18,13 @@
 #include <kern/syscall.h>
 
 #include <kern/vma.h>
+#include <kern/lock.h>
 
 struct env *envs = NULL;            /* All environments */
-static struct env *env_free_list;          /* Free environment list */            
+static struct env *env_free_list;   /* Free environment list */            
                                     /* (linked by env->env_link) */
-struct kthread *kthreads = NULL;
 
 #define ENVGENSHIFT 12      /* >= LOGNENV */
-
-int local_lock_env();
-void local_unlock_env(int kern);
-
-// ZUZANA TODO maybe add arguments for the function
-void kthread_create(void *(*start_routine)) {
-    int id = 0;
-    int i;
-
-    // generate new id
-    for (i = 0; i < 32; i++) {
-        if (kthreads[i].kt_id == -1) {
-            break;
-        }
-
-        id++;
-    }
-
-    if (i == 32) {
-        panic("No free kthread!\n");
-    }
-
-    kthreads[i].kt_id = id;
-    kthreads[i].kt_type = ENV_TYPE_USER;            // Needed? ZUZANA it's kernel, not user
-    kthreads[i].kt_status = ENV_RUNNABLE;
-    kthreads[i].start_routine = *start_routine;
-
-    kthreads[i].timeslice = 100000000;
-    kthreads[i].prev_time = 0;
-
-    // Set frame to 0 to prevent leaking
-    memset(&kthreads[i].kt_frame, 0, sizeof kthreads[i].kt_frame);
-
-    // registers are OK to be 0 initially
-    kthreads[i].kt_frame.rflags = read_rflags();
-
-    // ZUZANA TODO to reserve VA for this
-    // kthreads[i].kt_frame.rbp = ??
-    // kthreads[i].kt_frame.rsp = ??
-    kthreads[i].kt_frame.rip = (uint64_t) (*start_routine);
-    kthreads[i].kt_frame.ds = GDT_KDATA;
-
-}
-
-// Start a kernel thread
-void kthread_run(struct kthread *kt)
-{
-    cprintf("[KTHREAD_RUN] start\n");
-
-    int lock = local_lock_env();
-    kt->kt_status = ENV_RUNNING;
-
-    // Set env to runnable
-    if ((curenv != NULL) && (curenv->env_status == ENV_RUNNING))
-        curenv->env_status = ENV_RUNNABLE;
-
-    // make this current kernel thread for this CPU
-    curkt = kt;
-
-    unlock_env();
-
-    // start running
-    kthread_restore_context(&kt->kt_frame);
-}
-
-// Kernel thread interrupted itself, save state and call scheduler again
-void kthread_interrupt()
-{
-    cprintf("[KTHREAD_RUN] start\n");
-
-    int lock = local_lock_env();
-
-    // Reset waiting for kt and make it runnable again
-    curkt->timeslice = 100000000;
-    curkt->prev_time = read_tsc();
-    curkt->kt_status = ENV_RUNNABLE;
-
-    kthread_save_context();
-    // will return to kthread_yield
-
-}
-
-void kthread_yield(struct kthread_frame kt_frame) {
-
-    curkt->kt_frame = kt_frame;
-    curkt = NULL;
-
-    unlock_env();
-    sched_yield();
-}
-
-// Kernel thread is finished, reset state and kthread struct
-void kthread_finish()
-{
-    cprintf("[KTHREAD_RUN] start\n");
-    return;
-
-    int lock = local_lock_env();
-
-    // Reset waiting for kt and make it runnable again
-    curkt->timeslice = 100000000;
-    curkt->prev_time = read_tsc();
-    curkt->kt_status = ENV_RUNNABLE;
-
-    // ZUZANA restore RIP, RSP and RBP (we don't want to overflow the stack)
-    curkt->kt_frame.rip = (uint64_t) curkt->start_routine;
-    // curkt->kt_frame.rsp = ???
-    // curkt->kt_frame.rbp = ???
-
-    curkt = NULL;
-
-    unlock_env();
-    sched_yield();
-}
-
-
-// ------------------------------------------------------------------------------
-// ZUZANA TODO move this to another file kthreads.c or something where all
-// entry functions for kernel threads will be
-void kthread_dummy() {
-    cprintf("[KTHREAD_DUMMY] start\n");
-    
-    kthread_interrupt();
-
-    cprintf("[KTHREAD_DUMMY] end\n");
-
-    kthread_finish();
-}
-
-// ------------------------------------------------------------------------------
-
-
-
-
-int local_lock_env() {
-    int kern = 0;
-
-    if (!holding(&env_lock)) {
-        kern++;
-        cprintf("[lock_env] lock env start\n");
-        lock_env();
-        cprintf("[lock_env] lock env finish\n");
-    }
-
-    return kern;
-}
-
-void local_unlock_env(int kern) {
-    if (kern) {
-        cprintf("[unlock_env] unlock env start\n");
-        unlock_env();
-        cprintf("[unlock_env] unlock env finish\n");
-    }
-}
 
 /*
  * Converts an envid to an env pointer.
@@ -194,13 +40,13 @@ int envid2env(envid_t envid, struct env **env_store, bool checkperm)
 {
     struct env *e;
 
-    int kern = local_lock_env();
+    int kern = env_lock_env();
     assert_lock_env();
 
     /* If envid is zero, return the current environment. */
     if (envid == 0) {
         *env_store = curenv;
-        local_unlock_env(kern);
+        env_unlock_env(kern);
         return 0;
     }
 
@@ -214,7 +60,7 @@ int envid2env(envid_t envid, struct env **env_store, bool checkperm)
     e = &envs[ENVX(envid)];
     if (e->env_status == ENV_FREE || e->env_id != envid) {
         *env_store = 0;
-        local_unlock_env(kern);
+        env_unlock_env(kern);
         return -E_BAD_ENV;
     }
 
@@ -227,12 +73,12 @@ int envid2env(envid_t envid, struct env **env_store, bool checkperm)
      */
     if (checkperm && e != curenv && e->env_parent_id != curenv->env_id) {
         *env_store = 0;
-        local_unlock_env(kern);
+        env_unlock_env(kern);
         return -E_BAD_ENV;
     }
 
     *env_store = e;
-    local_unlock_env(kern);
+    env_unlock_env(kern);
     return 0;
 }
 
@@ -305,7 +151,6 @@ static int env_setup_vm(struct env *e)
 
     /* LAB 3: your code here. */
     page_increm(p);
-    // p->pp_ref += 1;
     e->env_pml4 = (struct page_table *)KADDR(page2pa(p));
 
     // The initial VA below UTOP is empty
@@ -334,7 +179,7 @@ static int env_setup_vma(struct env *e) {
     struct vma *vma_list = e->vma_array;
     int j;
 
-    for (j = 0; j < 128; j++) {
+    for (j = 0; j < MAX_VMAS; j++) {
         vma_list[j].type = VMA_UNUSED;       
         vma_list[j].va = NULL;
         vma_list[j].len = 0;  
@@ -343,7 +188,7 @@ static int env_setup_vma(struct env *e) {
         vma_list[j].mem_size = 0;
         vma_list[j].file_va = NULL;
         vma_list[j].file_size = 0;
-        vma_list[j].next = (j == 127) ? NULL : &vma_list[j+1];
+        vma_list[j].next = (j == MAX_VMAS-1) ? NULL : &vma_list[j+1];
         vma_list[j].prev = (j == 0) ? NULL : &vma_list[j-1];
     }
 
@@ -363,25 +208,25 @@ static int env_setup_vma(struct env *e) {
 int env_alloc(struct env **newenv_store, envid_t parent_id)
 {
     cprintf("[ENV ALLOC] start\n");
-    int kern = local_lock_env();
+    int kern = env_lock_env();
     int32_t generation;
     int r;
     struct env *e;
 
     if (!(e = env_free_list)) {
-        local_unlock_env(kern);
+        env_unlock_env(kern);
         return -E_NO_FREE_ENV;
     }
 
     /* Allocate and set up the page directory for this environment. */
     if ((r = env_setup_vm(e)) < 0) {
-        local_unlock_env(kern);
+        env_unlock_env(kern);
         return r;
     }
 
     /* Set up list of VMAs for this environment. */
     if ((r = env_setup_vma(e)) < 0) {
-        local_unlock_env(kern);
+        env_unlock_env(kern);
         return r;
     }
 
@@ -397,7 +242,7 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     e->env_status = ENV_RUNNABLE;
     e->env_runs = 0;
 
-    e->timeslice = 100000000;
+    e->timeslice = MAXTIMESLICE;
     e->prev_time = 0;
     e->pause = -1;
 
@@ -436,7 +281,7 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     *newenv_store = e;
 
     cprintf("[%08x] new env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
-    local_unlock_env(kern);
+    env_unlock_env(kern);
     cprintf("[ENV ALLOC] end\n");
     return 0;
 }
@@ -603,7 +448,7 @@ void env_create(uint8_t *binary, enum env_type type)
 {
     /* LAB 3: your code here. */
     cprintf("[ENV CREATE] start\n");
-    int kern = local_lock_env();
+    int kern = env_lock_env();
     struct env *e;
     int res;
 
@@ -623,7 +468,7 @@ void env_create(uint8_t *binary, enum env_type type)
         panic("Error in env_alloc");
     }
 
-    local_unlock_env(kern);
+    env_unlock_env(kern);
     cprintf("[ENV CREATE] end\n");
 }
 
@@ -665,7 +510,7 @@ void env_free_page_tables(struct page_table *page_table, size_t depth)
  */
 void env_free(struct env *e)
 {
-    int kern = local_lock_env();
+    int kern = env_lock_env();
     /* If freeing the current environment, switch to kern_pgdir
      * before freeing the page directory, just in case the page
      * gets reused. */
@@ -686,7 +531,7 @@ void env_free(struct env *e)
     e->env_link = env_free_list;
     env_free_list = e;
 
-    local_unlock_env(kern);
+    env_unlock_env(kern);
 }
 
 /*
@@ -696,7 +541,7 @@ void env_free(struct env *e)
  */
 void env_destroy(struct env *e)
 {
-    int kern = local_lock_env();
+    int kern = env_lock_env();
     assert_lock_env();
 
     /* If e is currently running on other CPUs, we change its state to
@@ -710,11 +555,13 @@ void env_destroy(struct env *e)
     env_free(e);
 
     if (curenv == e) {
-        // curenv = NULL;
+        // Curenv just finished so reset the envs which were paused
+        reset_pause(get_env_index(curenv->env_id));
+
         sched_yield();
     }
 
-    local_unlock_env(kern);
+    env_unlock_env(kern);
 }
 
 /*
@@ -768,7 +615,7 @@ void env_run(struct env *e)
     /* LAB 3: your code here. */
     cprintf("[ENV RUN] start\n");
 
-    int lock = local_lock_env();
+    int lock = env_lock_env();
 
     // If there is any already running environment, make it runnable
     if ((curenv != NULL) && (curenv->env_status == ENV_RUNNING))

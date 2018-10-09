@@ -51,7 +51,7 @@
 /* VMA lists */
 #define USER_VMAS (USER_ENVS - PDPT_SPAN)
 
-// Kthreads lists
+/* Kthreads lists */
 #define USER_KTHREADS (USER_VMAS - PDPT_SPAN)
 
 /* User stacks. */

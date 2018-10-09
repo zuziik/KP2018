@@ -13,6 +13,7 @@
 
 #include <kern/spinlock.h>
 #include <kern/sched.h>
+#include <kern/kthread.h>
 
 static void boot_aps(void);
 
@@ -46,6 +47,9 @@ void kmain(struct boot_info *boot_info)
 
     /* Acquire the big kernel lock before waking up APs.
      * LAB 6: your code here. */
+    /* Master: prevent functions in pmap.c to unlock the env lock
+     * Env: We are creating envs so stop other cpu's from scheduling until all
+     *      envs are created */
     lock_master();
     lock_env();
 
@@ -57,6 +61,7 @@ void kmain(struct boot_info *boot_info)
     ENV_CREATE(TEST, ENV_TYPE_USER);
 #else
     /* Touch all you want. */
+    // A few different programs to do testing with
     ENV_CREATE(user_divzero, ENV_TYPE_USER);
     ENV_CREATE(user_vmatest, ENV_TYPE_USER);
     ENV_CREATE(user_mapunmap, ENV_TYPE_USER);
@@ -71,12 +76,12 @@ void kmain(struct boot_info *boot_info)
     kthread_create(&kthread_dummy);
     kthread_create(&kthread_dummy);
 
+    /* The init work for all cpu's and workload is finished, give the locks back
+     * The master lock will never be used again */
     unlock_env();
     unlock_master();
 
-    cprintf("[MAIN] end");
-
-    /* We only have one user environment for now, so just run it. */
+    /* Start running an env */
     sched_yield();
 }
 

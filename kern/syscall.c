@@ -223,7 +223,6 @@ void enforce_cow(struct page_table *pml4) {
     size_t s, t, u, v;
 
     // Loop through pml4 entries
-    // for (s = 0; s < PAGE_TABLE_ENTRIES; ++s) {
     for (s = 0; s < PML4_INDEX(USER_TOP); ++s) {
         if (!(pml4->entries[s] & PAGE_PRESENT))
             continue;
@@ -242,7 +241,6 @@ void enforce_cow(struct page_table *pml4) {
 
                 // Check huge pages,
                 if (pgdir->entries[u] & PAGE_HUGE && pgdir->entries[u] & PAGE_WRITE) {
-                    // cprintf("[ENFORCE_COW] huge page\n");
                     pgdir->entries[u] &= ~PAGE_WRITE;
                     continue;
                 }
@@ -254,7 +252,6 @@ void enforce_cow(struct page_table *pml4) {
                         continue;
 
                     if (pt->entries[v] & PAGE_WRITE) {
-                        // cprintf("[ENFORCE_COW] normal page\n");
                         pt->entries[v] &= ~PAGE_WRITE;
                     }
                 }
@@ -271,7 +268,7 @@ void copy_vma(struct env *old, struct env *new) {
     struct vma* vma_new_next;
     struct vma* vma_new_prev;
 
-    for (i = 0; i < 128; i++) {
+    for (i = 0; i < MAX_VMAS; i++) {
         vma_new->type = vma_old->type;
         vma_new->va = vma_old->va;
         vma_new->len = vma_old->len;
@@ -315,7 +312,6 @@ int alloc_table(struct page_table *old, struct page_table *new, size_t index) {
 
     // Set the page
     page_increm(p);
-    // p->pp_ref++;
     new->entries[index] = page2pa(p) | perm;
     return 0;
 }
@@ -338,7 +334,6 @@ int copy_pml4(struct env *old, struct env *new) {
 
     // Loop through pml4 entries
     for (s = 0; s < PML4_INDEX(USER_TOP); ++s) {
-    // for (s = 0; s < PAGE_TABLE_ENTRIES; ++s) {
         if (!(pml4_old->entries[s] & PAGE_PRESENT)) 
             continue;
 
@@ -372,7 +367,6 @@ int copy_pml4(struct env *old, struct env *new) {
                     cprintf("[1]phys_addr = %llx\n", pgdir_old->entries[u]);
                     page = pa2page(PAGE_ADDR(pgdir_old->entries[u]));
                     page_increm(page);
-                    // page->pp_ref++;
                     continue;
                 }
 
@@ -391,7 +385,6 @@ int copy_pml4(struct env *old, struct env *new) {
                     pt_new->entries[v] = pt_old->entries[v];  
                     page = pa2page(PAGE_ADDR(pt_old->entries[v]));
                     page_increm(page);
-                    // page->pp_ref++;       
                 }
             }
         }
@@ -442,7 +435,6 @@ static int sys_fork(void)
 {
     /* fork() that follows COW semantics */
     /* LAB 5: your code here. */
-    // return -1;
     cprintf("[SYS_FORK] START\n");
     struct env *new_env;
 

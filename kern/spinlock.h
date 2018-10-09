@@ -27,8 +27,7 @@ struct spinlock {
 #endif
 };
 
-
-int holding(struct spinlock *lock);     // MATTHIJS: added this here, was static
+int holding(struct spinlock *lock);
 void __spin_initlock(struct spinlock *lk, char *name);
 void spin_lock(struct spinlock *lk);
 void spin_unlock(struct spinlock *lk);
@@ -71,10 +70,10 @@ static inline void assert_lock_env(void) { }
 
 #else  /* USE_BIG_KERNEL_LOCK */
 
-extern struct spinlock pagealloc_lock;
-extern struct spinlock env_lock;
-extern struct spinlock console_lock;
-extern struct spinlock master_lock;
+extern struct spinlock pagealloc_lock;  // physical memory
+extern struct spinlock env_lock;        // changing environments
+extern struct spinlock console_lock;    // printing
+extern struct spinlock master_lock;     // super user lock - no one can stop you
 
 static inline void lock_pagealloc(void) { spin_lock(&pagealloc_lock); }
 static inline void unlock_pagealloc(void) { spin_unlock(&pagealloc_lock); asm volatile("pause"); }
