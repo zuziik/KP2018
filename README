@@ -3,7 +3,27 @@ Kernel Programming 2018 @VU
 by Matthijs Jansen and Zuzana Hromcova
 Version from Tuesday, October 9th
 
-Score: ....
 No bonus implemented
+Score: 85 / 95
+    - Lab 5 fork doesnt work so cowfork and mcorefork dont work
+    - make run-qemu CPUS=X with X>1 can be used to test multicore
+    - In main.c, a couple of different environments are created (7 in total) with which a multicore setting can be simulated
+    - These ENV_CREATE(...) statements can be changed so different core and env settings can be tested (1 cpu, >1 envs OR >1cpu, 1 env etc).
 
-< More explanation >
+Part 1: Boot up other cores
+    - Creation of envs (as mentioned before) and other core starup code can be found in main.c
+    - Pmap.c mem_init and mem_init_mp have been changed so enough physical and virtual memory is allocated per cpu
+
+Part 2: Locking
+    - 4 different locks are used: master, env, pagealloc and console
+    - Master: used during core init so Application Processors have to wait until the bootstrapping processor is done with initing everything
+    - env: used to lock the envs struct, if creating, deleting, editing or checking envs
+    - pagealloc: used to lock the physical memory (only in pmap.c), when changing something in / with the pages array
+    - console: used to lock printing to output
+
+Part 3: Kernel threads
+    - a curkthread variable is added just like curenv, same with kthreads -> envs and struct kthread -> struct env and kthread_frame -> int_frame
+    - Scheduler is now much more complicated because of all the edge cases in scheduling when using kernel threads
+    - Kernel threads functions can be found in kern/kthread.c
+    - Kernel threads are kind of environments which only run in ring 0, so when a kernel thread is finished doing its periodicly job, a "jump" from ring 0 to ring 0 is made to save context (stubs.S)
+
