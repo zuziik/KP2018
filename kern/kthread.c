@@ -45,7 +45,7 @@ void kthread_create(void *(*start_routine))
     kthreads[i].timeslice = MAX_WAITTIME;
     kthreads[i].prev_time = 0;
 
-    kthreads[i].start_rip = (uint64_t) (*start_routine);
+    kthreads[i].start_rip = (uint64_t) (start_routine);
     kthreads[i].start_rbp = KTHREAD_STACK_TOP - (KTHREAD_STACK_SIZE + KTHREAD_STACK_GAP) * i;
 
     // Set frame to 0 to prevent leaking
@@ -84,7 +84,7 @@ void kthread_run(struct kthread *kt)
 // Kernel thread interrupted itself, save state and call scheduler again
 void kthread_interrupt()
 {
-    cprintf("[KTHREAD_RUN] start\n");
+    cprintf("[KTHREAD_INTER] start\n");
 
     int lock = env_lock_env();
 
@@ -93,14 +93,15 @@ void kthread_interrupt()
     curkt->prev_time = read_tsc();
     curkt->kt_status = ENV_RUNNABLE;
 
+    cprintf("INTERRUPT CONTEXT\n");
     kthread_save_context();
     // will return to kthread_yield
 
 }
 
-void kthread_yield(struct kthread_frame kt_frame) 
+void kthread_yield(struct kthread_frame *kt_frame) 
 {
-    curkt->kt_frame = kt_frame;
+    memcpy(&curkt->kt_frame, kt_frame, sizeof (struct kthread_frame));
     curkt = NULL;
 
     unlock_env();   // MATTHIJS: dont have to unlock
@@ -110,8 +111,7 @@ void kthread_yield(struct kthread_frame kt_frame)
 // Kernel thread is finished, reset state and kthread struct
 void kthread_finish()
 {
-    cprintf("[KTHREAD_RUN] start\n");
-    return;
+    cprintf("[KTHREAD_FINISH] start\n");
 
     int lock = env_lock_env();
 
@@ -127,6 +127,7 @@ void kthread_finish()
 
     curkt = NULL;
 
+    cprintf("ENDED\n");
     unlock_env();   // MATTHIJS: dont have to unlock
     sched_yield();
 }
@@ -138,7 +139,7 @@ void kthread_finish()
 void kthread_dummy() {
     cprintf("[KTHREAD_DUMMY] start\n");
     
-    kthread_interrupt();
+    // kthread_interrupt();
 
     cprintf("[KTHREAD_DUMMY] end\n");
 

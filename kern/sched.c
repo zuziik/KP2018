@@ -40,7 +40,7 @@ void reset_pause(envid_t env_id) {
  */
 void sched_yield(void)
 {
-    cprintf("[SCHED_YIELD] start\n");
+    cprintf("[SCHED_YIELD] start %d\n", cpunum());
     if (!holding(&env_lock)) {
         lock_env();
     }
@@ -113,7 +113,7 @@ void sched_yield(void)
     for (j = 0; j < MAX_KTHREADS; j++) {
         if (kthreads[j].kt_id != -1 && kthreads[j].timeslice < 0) {
             cprintf("[SCHED_YIELD] kthread\n");
-            // kthread_run(&kthreads[j]);
+            kthread_run(&kthreads[j]);
             break;
         }
     }
