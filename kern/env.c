@@ -402,23 +402,9 @@ static void load_icode(struct env *e, uint8_t *binary)
             cprintf("ELF segment: kernel %llx, user %llx, size %llx", 
                 binary + ph[i].p_offset, ph[i].p_va, ph[i].p_filesz);
         }
-        // Also get the non-loadable parts as bss segment
-        // else {
-        //     memset((void *)ph[i].p_va, 0, ROUNDUP(ph[i].p_memsz, PAGE_SIZE));
-        // }
     }
     
     e->env_frame.rip = eh->e_entry;
-
-    /* Now map one page for the program's initial stack at virtual address
-     * USTACKTOP - PGSIZE. */
-
-    // /* LAB 3: your code here. */
-    // struct page_info *p = NULL;
-
-    //  Allocate a page for the page directory 
-    // if (!(p = page_alloc(0)))
-    //     panic("Couldn't allocate memory for environment initial stack");
 
     // Create a Vma for the user stack
     vma_insert(e, VMA_ANON, (void *)(USTACK_TOP - PAGE_SIZE), PAGE_SIZE, 

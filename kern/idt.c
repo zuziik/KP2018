@@ -469,9 +469,9 @@ int page_fault_load_page(void *fault_va_aligned) {
                 uint64_t dst_size = va_dst_end - va_dst_start;
                 uint64_t copy_size = (src_size < dst_size) ? src_size : dst_size;
 
-                load_pml4((void *)PADDR(curenv->env_pml4));
+                // load_pml4((void *)PADDR(curenv->env_pml4));
                 memcpy((void *) va_dst_start, (void *) va_src_start, copy_size);
-                load_pml4((void *)PADDR(kern_pml4));
+                // load_pml4((void *)PADDR(kern_pml4));
             }
             return 1;
         }

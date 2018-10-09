@@ -35,6 +35,14 @@
 #define KSTACK_SIZE (8 * PAGE_SIZE)
 #define KSTACK_GAP (8 * PAGE_SIZE)
 
+/* Kthreads stacks */
+#define KTHREAD_STACK_TOP KSTACK_TOP - (KSTACK_SIZE + KSTACK_GAP) * NCPU
+#define KTHREAD_STACK_SIZE (2 * PAGE_SIZE)
+#define KTHREAD_STACK_GAP (PAGE_SIZE)
+
+/* Kthreads lists */
+#define KTHREADS (KTHREAD_STACK_TOP - (KTHREAD_STACK_SIZE + KTHREAD_STACK_GAP) * MAX_KTHREADS)
+
 /* User address space limit. */
 #ifdef __ASSEMBLER__
 #define USER_LIM 0x800000000000
@@ -50,9 +58,6 @@
 
 /* VMA lists */
 #define USER_VMAS (USER_ENVS - PDPT_SPAN)
-
-/* Kthreads lists */
-#define USER_KTHREADS (USER_VMAS - PDPT_SPAN)
 
 /* User stacks. */
 #define USER_TOP USER_ENVS

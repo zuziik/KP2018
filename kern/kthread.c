@@ -40,12 +40,13 @@ void kthread_create(void *(*start_routine))
     }
 
     kthreads[i].kt_id = id;
-    kthreads[i].kt_type = ENV_TYPE_USER;            // Needed? ZUZANA it's kernel, not user
     kthreads[i].kt_status = ENV_RUNNABLE;
-    kthreads[i].start_routine = *start_routine;
 
     kthreads[i].timeslice = MAX_WAITTIME;
     kthreads[i].prev_time = 0;
+
+    kthreads[i].start_rip = (uint64_t) (*start_routine);
+    kthreads[i].start_rbp = KTHREAD_STACK_TOP - (KTHREAD_STACK_SIZE + KTHREAD_STACK_GAP) * i;
 
     // Set frame to 0 to prevent leaking
     memset(&kthreads[i].kt_frame, 0, sizeof kthreads[i].kt_frame);
@@ -53,10 +54,9 @@ void kthread_create(void *(*start_routine))
     // registers are OK to be 0 initially
     kthreads[i].kt_frame.rflags = read_rflags();
 
-    // ZUZANA TODO to reserve VA for this
-    // kthreads[i].kt_frame.rbp = ??
-    // kthreads[i].kt_frame.rsp = ??
-    kthreads[i].kt_frame.rip = (uint64_t) (*start_routine);
+    kthreads[i].kt_frame.rbp = kthreads[i].start_rbp;
+    kthreads[i].kt_frame.rsp = kthreads[i].start_rbp;
+    kthreads[i].kt_frame.rip = kthreads[i].start_rip;
     kthreads[i].kt_frame.ds = GDT_KDATA;
 }
 
@@ -120,10 +120,10 @@ void kthread_finish()
     curkt->prev_time = read_tsc();
     curkt->kt_status = ENV_RUNNABLE;
 
-    // ZUZANA restore RIP, RSP and RBP (we don't want to overflow the stack)
-    curkt->kt_frame.rip = (uint64_t) curkt->start_routine;
-    // curkt->kt_frame.rsp = ???
-    // curkt->kt_frame.rbp = ???
+    // restore RIP, RSP and RBP (we don't want to overflow the stack)
+    curkt->kt_frame.rip = curkt->start_rip;
+    curkt->kt_frame.rsp = curkt->start_rbp;
+    curkt->kt_frame.rbp = curkt->start_rbp;
 
     curkt = NULL;
 

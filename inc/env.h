@@ -108,10 +108,10 @@ struct vma {
 struct kthread {
     struct kthread_frame kt_frame;  /* Saved registers */
     envid_t kt_id;                  /* Unique environment identifier */
-    enum env_type kt_type;          /* Indicates special system environments */
     unsigned kt_status;             /* Status of the environment */
     int kt_cpunum;                  /* The CPU that the env is running on */
-    void *(*start_routine) ();
+    uint64_t start_rip;             /* RIP of the kernel thread routine */
+    uint64_t start_rbp;             /* TOP of the stack for the kernel thread */
 
     // Keep track of the timeslice                     
     int64_t timeslice;

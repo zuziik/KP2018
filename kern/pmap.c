@@ -100,6 +100,9 @@ void mem_init(struct boot_info *boot_info)
     uint32_t cr0;
     size_t i, n;
 
+    uintptr_t base;
+    uintptr_t vi;
+
     size_t j, vma_list_size;
     struct vma *vma_list;
     struct vma *vma_tmp;
@@ -160,6 +163,24 @@ void mem_init(struct boot_info *boot_info)
     for (i = 0; i < MAX_KTHREADS; i++) {
         kthreads[i].kt_id = -1;
         kthreads[i].kt_status = ENV_FREE;
+    }
+
+    //----------------------------------------------------------------------------------------
+    // Alloc memory for kthread_frame for each kthread
+    // Use page guards to protect from overflowing
+    //----------------------------------------------------------------------------------------
+
+    for (i = 0; i < MAX_KTHREADS; ++i) {
+        base = KTHREAD_STACK_TOP - (KTHREAD_STACK_SIZE + KTHREAD_STACK_GAP) * (i + 1);
+
+        // Backed by physical mem
+        boot_map_region(kern_pml4, base + KTHREAD_STACK_GAP, KTHREAD_STACK_SIZE,
+                        PADDR(boot_alloc(KTHREAD_STACK_SIZE)), PAGE_WRITE | PAGE_NO_EXEC);
+
+        // Page guard
+        for (vi = base; vi < base + KSTACK_GAP; vi += PAGE_SIZE) {
+            page_walk(kern_pml4, (void *)vi, CREATE_NORMAL);
+        }
     }
 
     /*********************************************************************
@@ -224,26 +245,9 @@ void mem_init(struct boot_info *boot_info)
     }
 
     // Map kthreads RW | None
-    boot_map_region(kern_pml4, USER_KTHREADS, 
+    boot_map_region(kern_pml4, KTHREADS, 
         ROUNDUP(MAX_KTHREADS * sizeof(struct kthread), PAGE_SIZE),
         PADDR(kthreads), PAGE_WRITE | PAGE_NO_EXEC);
-
-    //----------------------------------------------------------------------------------------
-    // TODO: Alloc memory for kthread_frame for each kthread
-    //       Use page guards to protect from overflowing
-    //----------------------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
 
     /*********************************************************************
      * Use the physical memory that 'bootstack' refers to as the kernel
@@ -1329,7 +1333,6 @@ static void check_kern_pml4(void)
         case PML4_INDEX(KSTACK_TOP-1):
         case PML4_INDEX(USER_PAGES):
         case PML4_INDEX(USER_ENVS):
-        case PML4_INDEX(USER_KTHREADS):
         case PML4_INDEX(MMIO_BASE):
             assert(pml4->entries[i] & PAGE_PRESENT);
             break;
