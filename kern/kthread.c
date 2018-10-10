@@ -20,6 +20,19 @@
 
 struct kthread *kthreads = NULL;
 
+void kthread_init_context(struct kthread *kt) {
+    struct kthread_frame frame;
+    memset(&frame, 0, sizeof (struct kthread_frame));
+    frame.rflags = read_rflags();
+    frame.rbp = kt->start_rbp;
+    frame.rip = kt->start_rip;
+    frame.ds = GDT_KDATA;
+    memcpy((void *) (kt->start_rbp - sizeof(struct kthread_frame)), (void *) &frame, sizeof(struct kthread_frame));
+    cprintf("copied\n");
+    kt->rsp = kt->start_rbp - sizeof(struct kthread_frame);
+}
+
+
 // ZUZANA TODO maybe add arguments for the function
 void kthread_create(void *(*start_routine)) 
 {
@@ -48,17 +61,9 @@ void kthread_create(void *(*start_routine))
     kthreads[i].start_rip = (uint64_t) (start_routine);
     kthreads[i].start_rbp = KTHREAD_STACK_TOP - (KTHREAD_STACK_SIZE + KTHREAD_STACK_GAP) * i;
 
-    // Set frame to 0 to prevent leaking
-    memset(&kthreads[i].kt_frame, 0, sizeof kthreads[i].kt_frame);
-
-    // registers are OK to be 0 initially
-    kthreads[i].kt_frame.rflags = read_rflags();
-
-    kthreads[i].kt_frame.rbp = kthreads[i].start_rbp;
-    kthreads[i].kt_frame.rsp = kthreads[i].start_rbp;
-    kthreads[i].kt_frame.rip = kthreads[i].start_rip;
-    kthreads[i].kt_frame.ds = GDT_KDATA;
+    kthread_init_context(&kthreads[i]);    
 }
+
 
 // Start a kernel thread
 void kthread_run(struct kthread *kt)
@@ -69,8 +74,10 @@ void kthread_run(struct kthread *kt)
     kt->kt_status = ENV_RUNNING;
 
     // Set env to runnable
-    if ((curenv != NULL) && (curenv->env_status == ENV_RUNNING))
+    if ((curenv != NULL) && (curenv->env_status == ENV_RUNNING)) {
+        cprintf("[kthread_run] set curenv runnable!");
         curenv->env_status = ENV_RUNNABLE;
+    }
 
     // make this current kernel thread for this CPU
     curkt = kt;
@@ -78,33 +85,34 @@ void kthread_run(struct kthread *kt)
     unlock_env();
 
     // start running
-    kthread_restore_context(&kt->kt_frame);
+    kthread_restore_context(kt->rsp);
+}
+
+void kthread_save_rsp(uint64_t rsp) {
+    env_lock_env();
+    curkt->rsp = rsp;
+    unlock_env();
+}
+
+uint64_t get_cpu_kernel_stack_top() {
+    return KSTACK_TOP - (KSTACK_SIZE + KSTACK_GAP) * cpunum();
 }
 
 // Kernel thread interrupted itself, save state and call scheduler again
-void kthread_interrupt()
+void kthread_yield() 
 {
     cprintf("[KTHREAD_INTER] start\n");
 
-    int lock = env_lock_env();
+    env_lock_env();
 
     // Reset waiting for kt and make it runnable again
     curkt->timeslice = MAX_WAITTIME;
     curkt->prev_time = read_tsc();
     curkt->kt_status = ENV_RUNNABLE;
 
-    cprintf("INTERRUPT CONTEXT\n");
-    kthread_save_context();
-    // will return to kthread_yield
-
-}
-
-void kthread_yield(struct kthread_frame *kt_frame) 
-{
-    memcpy(&curkt->kt_frame, kt_frame, sizeof (struct kthread_frame));
     curkt = NULL;
-
     unlock_env();   // MATTHIJS: dont have to unlock
+
     sched_yield();
 }
 
@@ -113,17 +121,14 @@ void kthread_finish()
 {
     cprintf("[KTHREAD_FINISH] start\n");
 
-    int lock = env_lock_env();
+    env_lock_env();
 
     // Reset waiting for kt and make it runnable again
     curkt->timeslice = MAX_WAITTIME;
     curkt->prev_time = read_tsc();
     curkt->kt_status = ENV_RUNNABLE;
 
-    // restore RIP, RSP and RBP (we don't want to overflow the stack)
-    curkt->kt_frame.rip = curkt->start_rip;
-    curkt->kt_frame.rsp = curkt->start_rbp;
-    curkt->kt_frame.rbp = curkt->start_rbp;
+    kthread_init_context(curkt);
 
     curkt = NULL;
 
@@ -139,11 +144,11 @@ void kthread_finish()
 void kthread_dummy() {
     cprintf("[KTHREAD_DUMMY] start\n");
     
-    // kthread_interrupt();
+    kthread_interrupt();
 
     cprintf("[KTHREAD_DUMMY] end\n");
 
-    kthread_finish();
+    kthread_end();
 }
 
 // ------------------------------------------------------------------------------

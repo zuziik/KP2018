@@ -170,17 +170,11 @@ void mem_init(struct boot_info *boot_info)
     // Use page guards to protect from overflowing
     //----------------------------------------------------------------------------------------
 
-    for (i = 0; i < MAX_KTHREADS; ++i) {
-        base = KTHREAD_STACK_TOP - (KTHREAD_STACK_SIZE + KTHREAD_STACK_GAP) * (i + 1);
+    cprintf("MAX_KTHREADS: %d\n", MAX_KTHREADS);
 
-        // Backed by physical mem
-        boot_map_region(kern_pml4, base + KTHREAD_STACK_GAP, KTHREAD_STACK_SIZE,
-                        PADDR(boot_alloc(KTHREAD_STACK_SIZE)), PAGE_WRITE | PAGE_NO_EXEC);
-
-        // Page guard
-        for (vi = base; vi < base + KSTACK_GAP; vi += PAGE_SIZE) {
-            page_walk(kern_pml4, (void *)vi, CREATE_NORMAL);
-        }
+    for (i = 0; i < MAX_KTHREADS; i++) {
+        kthreads[i].start_rbp = (int64_t) boot_alloc(KTHREAD_STACK_SIZE);
+        kthreads[i].top = boot_alloc(KTHREAD_STACK_SIZE);
     }
 
     /*********************************************************************
@@ -248,6 +242,20 @@ void mem_init(struct boot_info *boot_info)
     boot_map_region(kern_pml4, KTHREADS, 
         ROUNDUP(MAX_KTHREADS * sizeof(struct kthread), PAGE_SIZE),
         PADDR(kthreads), PAGE_WRITE | PAGE_NO_EXEC);
+
+    // Map stack for each kernel thread
+    for (i = 0; i < MAX_KTHREADS; ++i) {
+        base = KTHREAD_STACK_TOP - (KTHREAD_STACK_SIZE + KTHREAD_STACK_GAP) * (i + 1);
+
+        // Backed by physical mem
+        boot_map_region(kern_pml4, base + KTHREAD_STACK_GAP, KTHREAD_STACK_SIZE,
+                        PADDR(kthreads[i].top), PAGE_WRITE | PAGE_NO_EXEC);
+
+        // Page guard
+        for (vi = base; vi < base + KSTACK_GAP; vi += PAGE_SIZE) {
+            page_walk(kern_pml4, (void *)vi, CREATE_NORMAL);
+        }
+    }
 
     /*********************************************************************
      * Use the physical memory that 'bootstack' refers to as the kernel

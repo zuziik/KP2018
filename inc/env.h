@@ -34,7 +34,7 @@ typedef int32_t envid_t;
 #define MAXTIMESLICE    100000000
 #define MAX_KTHREADS    32
 #define MAX_VMAS        128
-#define MAX_WAITTIME    100000000
+#define MAX_WAITTIME    1000000000
 
 /* Values of env_status in struct env */
 enum {
@@ -106,12 +106,13 @@ struct vma {
 
 
 struct kthread {
-    struct kthread_frame kt_frame;  /* Saved registers */
     envid_t kt_id;                  /* Unique environment identifier */
     unsigned kt_status;             /* Status of the environment */
     int kt_cpunum;                  /* The CPU that the env is running on */
     uint64_t start_rip;             /* RIP of the kernel thread routine */
     uint64_t start_rbp;             /* TOP of the stack for the kernel thread */
+    void *top;
+    uint64_t rsp;                   /* Current stack pointer for the kernel thread */
 
     // Keep track of the timeslice                     
     int64_t timeslice;

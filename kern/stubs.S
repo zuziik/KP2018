@@ -42,11 +42,11 @@ ISR_NOERRCODE INT_SYSCALL
 
 # lab 5, also see idt.c for new idt entries
 ISR_NOERRCODE IRQ_TIMER
-ISR_NOERRCODE IRQ_KBD
-ISR_NOERRCODE IRQ_SERIAL 
-ISR_NOERRCODE IRQ_SPURIOUS
-ISR_NOERRCODE IRQ_IDE
-ISR_NOERRCODE IRQ_ERROR
+ISR_ERRCODE IRQ_KBD
+ISR_ERRCODE IRQ_SERIAL 
+ISR_ERRCODE IRQ_SPURIOUS
+ISR_ERRCODE IRQ_IDE
+ISR_ERRCODE IRQ_ERROR
 
 isr_common_stub:
     /* LAB 3: your code here. */
@@ -130,11 +130,10 @@ sysret64:
     sysretq
 
 
-.global kthread_save_context
-kthread_save_context:
+.global kthread_interrupt
+kthread_interrupt:
 
-    # rsp, rip should be pushed automatically if we use call
-
+    # rip should be pushed automatically if we use call
     pushfq
 
     pushq %rax
@@ -158,16 +157,34 @@ kthread_save_context:
     movw %ds, %ax
     pushq %rax
 
+    # set current rsp to curkt struct
     movq %rsp, %rdi
+    call kthread_save_rsp
+
+    # switch to kernel stack on this cpu
+    call get_cpu_kernel_stack_top
+    movq %rax, %rsp
+    movq %rax, %rbp
+
     jmp kthread_yield
+
+.global kthread_end
+kthread_end:
+    
+    # switch to kernel stack on this cpu
+    call get_cpu_kernel_stack_top
+    movq %rax, %rsp
+    movq %rax, %rbp
+
+    jmp kthread_finish
 
 
 .global kthread_restore_context
 kthread_restore_context:
 
     movq %rdi, %rsp
-    
-    # pop %ds
+
+    #pop %ds
     popq %rax
     movw %ax, %ds
     movw %ax, %es
@@ -190,5 +207,6 @@ kthread_restore_context:
     
     popfq
 
-    # rip, rsp are restored with retq    
+    # rip is restored with retq    
     retq
+    

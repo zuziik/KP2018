@@ -599,7 +599,7 @@ void env_run(struct env *e)
      */
 
     /* LAB 3: your code here. */
-    cprintf("[ENV RUN] start\n");
+    cprintf("[ENV_RUN] start\n");
 
     int lock = env_lock_env();
 
@@ -617,6 +617,7 @@ void env_run(struct env *e)
         curenv->prev_time = read_tsc();
     }
 
+    cprintf("%d[ENV_RUN] curenv running: %d\n", cpunum(), curenv->env_status == ENV_RUNNING);
     unlock_env();
 
     load_pml4((void *)PADDR(curenv->env_pml4));
