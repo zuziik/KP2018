@@ -34,7 +34,7 @@ typedef int32_t envid_t;
 #define MAXTIMESLICE    100000000
 #define MAX_KTHREADS    32
 #define MAX_VMAS        128
-#define MAX_WAITTIME    1000000000
+#define MAX_WAITTIME    100000000
 
 /* Values of env_status in struct env */
 enum {

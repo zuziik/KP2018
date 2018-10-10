@@ -604,7 +604,7 @@ void env_run(struct env *e)
     int lock = env_lock_env();
 
     // If there is any already running environment, make it runnable
-    if ((curenv != NULL) && (curenv->env_status == ENV_RUNNING))
+    if (curenv != NULL && curenv->env_status == ENV_RUNNING && curenv->env_cpunum == cpunum())
         curenv->env_status = ENV_RUNNABLE;
 
     // switch to new environment
@@ -617,7 +617,7 @@ void env_run(struct env *e)
         curenv->prev_time = read_tsc();
     }
 
-    cprintf("%d[ENV_RUN] curenv running: %d\n", cpunum(), curenv->env_status == ENV_RUNNING);
+    cprintf("%d[ENV_RUN] curenv_id: %d\n", cpunum(), curenv->env_id);
     unlock_env();
 
     load_pml4((void *)PADDR(curenv->env_pml4));

@@ -74,7 +74,7 @@ void kthread_run(struct kthread *kt)
     kt->kt_status = ENV_RUNNING;
 
     // Set env to runnable
-    if ((curenv != NULL) && (curenv->env_status == ENV_RUNNING)) {
+    if (curenv != NULL && curenv->env_status == ENV_RUNNING && curenv->env_cpunum == cpunum()) {
         cprintf("[kthread_run] set curenv runnable!");
         curenv->env_status = ENV_RUNNABLE;
     }

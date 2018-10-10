@@ -191,7 +191,7 @@ void int_dispatch(struct int_frame *frame)
          * using lapic_eoi() before calling the scheduler! lab 5
          */
         lapic_eoi();
-        cprintf("[dispatch] running: %d | runnable: %d\n", curenv->env_status == ENV_RUNNABLE, curenv->env_status == ENV_RUNNING);
+        cprintf("[dispatch] runnable: %d | running: %d\n", curenv->env_status == ENV_RUNNABLE, curenv->env_status == ENV_RUNNING);
         cprintf("[int_dispatch] TIMED_INTERRUPT\n");
         sched_yield();
         break;

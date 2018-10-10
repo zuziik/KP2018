@@ -62,7 +62,7 @@ void sched_yield(void)
         curenv = NULL;
     }
     // Curenv just ran, check if its timeslice is done, else keep running it
-    else if (curenv->env_status == ENV_RUNNING && curenv->env_cpunum != cpunum()) {
+    else if (curenv->env_status == ENV_RUNNING && curenv->env_cpunum == cpunum()) {
         cprintf("[3]%d\n", cpunum());
         curenv_i = get_env_index(curenv->env_id);
 
@@ -71,7 +71,7 @@ void sched_yield(void)
             diff =  time - curenv->prev_time;
         else {
             // 0x100000000 == MAXTIMESLICE in hex
-            diff = time - curenv->prev_time + 0x100000000;
+            diff = (time + 0x100000000) - curenv->prev_time;
         }
 
         if (curenv->timeslice > diff) {
@@ -84,15 +84,15 @@ void sched_yield(void)
                 env_run(curenv);
             }
         }
-        else {
-            curenv->timeslice = 0;
-            curenv->prev_time = time;
-        }
+        // else {
+            // curenv->timeslice = MAX;
+            // curenv->prev_time = time;
+        // }
     }
     // A kernel thread just ran, curenv is the last env that ran before the kthread
     else {
         cprintf("[4]%d\n", cpunum());
-        cprintf("running: %d | runnable: %d\n", curenv->env_status == ENV_RUNNABLE, curenv->env_status == ENV_RUNNING);
+        cprintf("runnable: %d | running: %d\n", curenv->env_status == ENV_RUNNABLE, curenv->env_status == ENV_RUNNING);
         cprintf("env_cpunum: %d | cpunum: %d\n", curenv->env_cpunum, cpunum());
         curenv_i = get_env_index(curenv->env_id);
     }
