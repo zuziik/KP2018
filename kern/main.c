@@ -62,7 +62,11 @@ void kmain(struct boot_info *boot_info)
 #else
     /* Touch all you want. */
     // A few different programs to do testing with
-    //ENV_CREATE(user_hello, ENV_TYPE_USER);
+    // ENV_CREATE(user_hello, ENV_TYPE_USER);
+    // ENV_CREATE(user_hello, ENV_TYPE_USER);
+    // ENV_CREATE(user_hello, ENV_TYPE_USER);
+    // ENV_CREATE(user_hello, ENV_TYPE_USER);
+    
     ENV_CREATE(user_divzero, ENV_TYPE_USER);
     ENV_CREATE(user_vmatest, ENV_TYPE_USER);
     ENV_CREATE(user_mapunmap, ENV_TYPE_USER);
@@ -73,9 +77,9 @@ void kmain(struct boot_info *boot_info)
 #endif
 
     // Create some kernel threads
-    // kthread_create(&kthread_dummy);
-    // kthread_create(&kthread_dummy);
-    //kthread_create(&kthread_dummy);
+    kthread_create(&kthread_dummy);
+    kthread_create(&kthread_dummy);
+    kthread_create(&kthread_dummy);
 
     /* The init work for all cpu's and workload is finished, give the locks back
      * The master lock will never be used again */

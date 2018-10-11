@@ -560,6 +560,7 @@ void env_pop_frame(struct int_frame *frame)
 {
     /* Record the CPU we are running on for user-space debugging */
     curenv->env_cpunum = cpunum();
+    unlock_env();
 
     switch (frame->int_no) {
 #ifdef LAB3_SYSCALL
@@ -617,8 +618,7 @@ void env_run(struct env *e)
         curenv->prev_time = read_tsc();
     }
 
-    cprintf("%d[ENV_RUN] curenv_id: %d\n", cpunum(), curenv->env_id);
-    unlock_env();
+    // cprintf("%d[ENV_RUN] curenv_id: %d\n", cpunum(), curenv->env_id);
 
     load_pml4((void *)PADDR(curenv->env_pml4));
     env_pop_frame(&curenv->env_frame);

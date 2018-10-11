@@ -14,6 +14,7 @@
 
 #include <kern/pmap.h>
 #include <kern/vma.h>
+#include <kern/lock.h>
 
 #include <inc/string.h>
 
@@ -191,7 +192,7 @@ void int_dispatch(struct int_frame *frame)
          * using lapic_eoi() before calling the scheduler! lab 5
          */
         lapic_eoi();
-        cprintf("[dispatch] runnable: %d | running: %d\n", curenv->env_status == ENV_RUNNABLE, curenv->env_status == ENV_RUNNING);
+        // cprintf("[dispatch] runnable: %d | running: %d\n", curenv->env_status == ENV_RUNNABLE, curenv->env_status == ENV_RUNNING);
         cprintf("[int_dispatch] TIMED_INTERRUPT\n");
         sched_yield();
         break;
@@ -283,6 +284,7 @@ void int_handler(struct int_frame *frame)
 
         /* Avoid using the frame on the stack. */
         frame = &curenv->env_frame;
+        // unlock_env();
     }
 
     /* Dispatch based on the type of interrupt that occurred. */
@@ -290,11 +292,13 @@ void int_handler(struct int_frame *frame)
 
     /* If we made it to this point, then no other environment was scheduled, so
      * we should return to the current environment if doing so makes sense. */
-    if (curenv && curenv->env_status == ENV_RUNNING) {
-        env_run(curenv);
-    }
-    else
-        sched_yield();
+    sched_yield();
+    // if (curenv && curenv->env_status == ENV_RUNNING) {
+    //     panic("should this ever happen?\n");
+    //     env_run(curenv);
+    // }
+    // else
+    //     sched_yield();
 }
 
 void page_fault_handler(struct int_frame *frame)
