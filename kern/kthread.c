@@ -20,6 +20,7 @@
 
 struct kthread *kthreads = NULL;
 
+// Save current context in kernel thread
 void kthread_init_context(struct kthread *kt) {
     struct kthread_frame frame;
     memset(&frame, 0, sizeof (struct kthread_frame));
@@ -28,12 +29,11 @@ void kthread_init_context(struct kthread *kt) {
     frame.rip = kt->start_rip;
     frame.ds = GDT_KDATA;
     memcpy((void *) (kt->start_rbp - sizeof(struct kthread_frame)), (void *) &frame, sizeof(struct kthread_frame));
-    cprintf("copied\n");
     kt->rsp = kt->start_rbp - sizeof(struct kthread_frame);
 }
 
-
 // ZUZANA TODO maybe add arguments for the function
+// Create a kernel thread
 void kthread_create(void *(*start_routine)) 
 {
     int id = 0;
@@ -52,18 +52,20 @@ void kthread_create(void *(*start_routine))
         panic("No free kthread!\n");
     }
 
+    // Set new values
     kthreads[i].kt_id = id;
     kthreads[i].kt_status = ENV_RUNNABLE;
 
     kthreads[i].timeslice = MAX_WAITTIME;
     kthreads[i].prev_time = 0;
 
+    // Set default instruction pointer and base pointer
     kthreads[i].start_rip = (uint64_t) (start_routine);
     kthreads[i].start_rbp = KTHREAD_STACK_TOP - (KTHREAD_STACK_SIZE + KTHREAD_STACK_GAP) * i;
 
+    // Set and save context (frame)
     kthread_init_context(&kthreads[i]);    
 }
-
 
 // Start a kernel thread
 void kthread_run(struct kthread *kt)
@@ -88,12 +90,14 @@ void kthread_run(struct kthread *kt)
     kthread_restore_context(kt->rsp);
 }
 
+// Set stack pointer
 void kthread_save_rsp(uint64_t rsp) {
     env_lock_env();
     curkt->rsp = rsp;
     unlock_env();
 }
 
+// Get top of stack for this cpu
 uint64_t get_cpu_kernel_stack_top() {
     return KSTACK_TOP - (KSTACK_SIZE + KSTACK_GAP) * cpunum();
 }
@@ -133,11 +137,11 @@ void kthread_finish()
     curkt = NULL;
 
     cprintf("ENDED\n");
-    unlock_env();   // MATTHIJS: dont have to unlock
+    unlock_env();
     sched_yield();
 }
 
-
+// ------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------
 // ZUZANA TODO move this to another file kthreads.c or something where all
 // entry functions for kernel threads will be

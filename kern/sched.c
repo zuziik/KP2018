@@ -40,7 +40,7 @@ void reset_pause(envid_t env_id) {
  */
 void sched_yield(void)
 {
-    // cprintf("[SCHED_YIELD] start %d\n", cpunum());
+    cprintf("[SCHED_YIELD] start\n");
     if (!holding(&env_lock)) {
         lock_env();
     }
@@ -52,25 +52,25 @@ void sched_yield(void)
 
     // First time running something on this cpu
     if (curenv == NULL) {
-        // cprintf("[1]%d\n", cpunum());
+        cprintf("[1]\n");
         curenv_i = 0;
     }
     // Curenv was just destroyed
     else if (curenv->env_status == ENV_FREE) {
-        // cprintf("[2]%d\n", cpunum());
+        cprintf("[2]\n");
         curenv_i = get_env_index(curenv->env_id);
         curenv = NULL;
     }
     // Curenv just ran, check if its timeslice is done, else keep running it
     else if (curenv->env_status == ENV_RUNNING && curenv->env_cpunum == cpunum()) {
-        // cprintf("[3]%d\n", cpunum());
+        cprintf("[3]\n");
         curenv_i = get_env_index(curenv->env_id);
 
         // Update timeslice of curenv
         if (time >= curenv->prev_time)   
             diff = time - curenv->prev_time;
         else {
-            // 0x100000000 == MAXTIMESLICE in hex
+            // 0x100000000 = MAXTIMESLICE
             diff = (time + 0x100000000) - curenv->prev_time;
         }
 
@@ -80,7 +80,7 @@ void sched_yield(void)
 
             // If env is still running and timeslice is not 0, continue executing
             if (curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
-                // cprintf("[SCHED_YIELD] curenv resume %d\n", cpunum());
+                cprintf("[SCHED_YIELD] curenv resume\n");
                 env_run(curenv);
             }
         }
@@ -91,44 +91,35 @@ void sched_yield(void)
     }
     // A kernel thread just ran, curenv is the last env that ran before the kthread
     else {
-        // cprintf("[4]%d\n", cpunum());
-        // cprintf("runnable: %d | running: %d\n", curenv->env_status == ENV_RUNNABLE, curenv->env_status == ENV_RUNNING);
-        // cprintf("env_cpunum: %d | cpunum: %d\n", curenv->env_cpunum, cpunum());
+        cprintf("[4]\n");
         curenv_i = get_env_index(curenv->env_id);
     }
 
     // Corner case: curenv is last env so go circular
     i = (curenv_i + 1) % NENV;
-    cprintf("sched yield curenv_i: %d\n", curenv_i);
 
     // Update timeslices of runnable kthreads
     for (j = 0; j < MAX_KTHREADS; j++) {
         if (kthreads[j].kt_id != -1 && kthreads[j].kt_status == ENV_RUNNABLE) {
-            // if (time >= kthreads[j].prev_time) 
             diff =  time - kthreads[j].prev_time;
-            // else {
-                // 0x100000000 == MAXTIMESLICE in hex
-            //     diff = time - kthreads[j].prev_time + 0x100000000;
-            // }
 
             kthreads[j].timeslice -= diff;
             kthreads[j].prev_time = time;
         }
     }
 
-    cprintf("thread timeslices updated\n");
+    cprintf("[SCHED_YIELD] Thread timeslices updated\n");
 
     // Try to schedule a kthread
     for (j = 0; j < MAX_KTHREADS; j++) {
-        //cprintf("sched yield kt_id: %d, timeslice: %llx\n", kthreads[j].kt_id, kthreads[j].timeslice);
         if (kthreads[j].kt_id != -1 && kthreads[j].timeslice < 0 && kthreads[j].kt_status == ENV_RUNNABLE) {
-            // cprintf("[SCHED_YIELD] kthread %d\n", cpunum());
+            cprintf("[SCHED_YIELD] kthread\n");
             kthread_run(&kthreads[j]);
             break;
         }
     }
 
-    cprintf("not running any kthreads\n");
+    cprintf("[SCHED_YIELD] Not running any kthreads\n");
 
     /*
      * Implement simple round-robin scheduling.

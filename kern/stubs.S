@@ -50,7 +50,9 @@ ISR_ERRCODE IRQ_ERROR
 
 isr_common_stub:
     /* LAB 3: your code here. */
-    # cli # clear interrupt flag, lab 5 - not needed if we use INT_TRAP for everything (plus, if we wanted to use something else, it wouldn't work)
+    # cli 
+    # clear interrupt flag, lab 5 - not needed if we use INT_TRAP for everything 
+    # (plus, if we wanted to use something else, it wouldn't work)
 
     pushq %rax
     pushq %rcx
@@ -84,12 +86,6 @@ isr_common_stub:
 .global syscall64
 syscall64:
     /* LAB 3: your code here. */
-
-    # movl $MSR_KERNEL_GS_BASE, %ecx
-    # movl 0xdeadbeef, %eax
-    # wrmsr
-    # swapgs
-
     jmp syscall_handler
 
 .global iret64
@@ -98,7 +94,6 @@ iret64:
     
     movq %rdi, %rsp
     
-    # pop %ds
     popq %rax
     movw %ax, %ds
     movw %ax, %es

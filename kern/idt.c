@@ -192,7 +192,6 @@ void int_dispatch(struct int_frame *frame)
          * using lapic_eoi() before calling the scheduler! lab 5
          */
         lapic_eoi();
-        // cprintf("[dispatch] runnable: %d | running: %d\n", curenv->env_status == ENV_RUNNABLE, curenv->env_status == ENV_RUNNING);
         cprintf("[int_dispatch] TIMED_INTERRUPT\n");
         sched_yield();
         break;
@@ -246,11 +245,6 @@ void int_handler(struct int_frame *frame)
     if (panicstr)
         asm volatile("hlt");
 
-    /* Re-acqurie the big kernel lock if we were halted in sched_yield(). */
-    // if (xchg(&thiscpu->cpu_status, CPU_STARTED) == CPU_HALTED) {
-    //     //...
-    // }
-
     /* Check that interrupts are disabled.
      * If this assertion fails, DO NOT be tempted to fix it by inserting a "cli"
      * in the interrupt path.
@@ -272,8 +266,6 @@ void int_handler(struct int_frame *frame)
             env_free(curenv);
 
             reset_pause(get_env_index(curenv->env_id));
-            // curenv = NULL;
-
             sched_yield();
         }
 
@@ -284,7 +276,6 @@ void int_handler(struct int_frame *frame)
 
         /* Avoid using the frame on the stack. */
         frame = &curenv->env_frame;
-        // unlock_env();
     }
 
     /* Dispatch based on the type of interrupt that occurred. */
@@ -293,12 +284,6 @@ void int_handler(struct int_frame *frame)
     /* If we made it to this point, then no other environment was scheduled, so
      * we should return to the current environment if doing so makes sense. */
     sched_yield();
-    // if (curenv && curenv->env_status == ENV_RUNNING) {
-    //     panic("should this ever happen?\n");
-    //     env_run(curenv);
-    // }
-    // else
-    //     sched_yield();
 }
 
 void page_fault_handler(struct int_frame *frame)
