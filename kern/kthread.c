@@ -20,7 +20,11 @@
 
 struct kthread *kthreads = NULL;
 
-// Save current context in kernel thread
+/**
+* Initialize the context of the kernel thread to the default values:
+* RIP -> start of the kernel thread routine
+* RSP, RBP -> top of the kernel thread stack
+*/
 void kthread_init_context(struct kthread *kt) {
     struct kthread_frame frame;
     memset(&frame, 0, sizeof (struct kthread_frame));
@@ -32,8 +36,10 @@ void kthread_init_context(struct kthread *kt) {
     kt->rsp = kt->start_rbp - sizeof(struct kthread_frame);
 }
 
-// ZUZANA TODO maybe add arguments for the function
-// Create a kernel thread
+/**
+* Create a kernel thread
+* For Lab7, support for the arguments might be added.
+*/
 void kthread_create(void *(*start_routine)) 
 {
     int id = 0;
@@ -54,20 +60,25 @@ void kthread_create(void *(*start_routine))
 
     // Set new values
     kthreads[i].kt_id = id;
-    kthreads[i].kt_status = ENV_RUNNABLE;
 
+    // Set default values
+    kthreads[i].kt_status = ENV_RUNNABLE;
     kthreads[i].timeslice = MAX_WAITTIME;
     kthreads[i].prev_time = 0;
 
-    // Set default instruction pointer and base pointer
+    // Save default instruction pointer and base pointer
     kthreads[i].start_rip = (uint64_t) (start_routine);
     kthreads[i].start_rbp = KTHREAD_STACK_TOP - (KTHREAD_STACK_SIZE + KTHREAD_STACK_GAP) * i;
 
-    // Set and save context (frame)
+    // Initialize the context
     kthread_init_context(&kthreads[i]);    
 }
 
-// Start a kernel thread
+/*
+* Resume execution of the kernel thread.
+* The thread context from the previous run (or the initial
+* context) is stored on the stack
+*/
 void kthread_run(struct kthread *kt)
 {
     cprintf("[KTHREAD_RUN] start\n");
@@ -81,28 +92,42 @@ void kthread_run(struct kthread *kt)
         curenv->env_status = ENV_RUNNABLE;
     }
 
-    // make this current kernel thread for this CPU
+    // Make this current kernel thread for this CPU
     curkt = kt;
 
     unlock_env();
 
-    // start running
+    // Restore the context and resume execution doesn't return)
     kthread_restore_context(kt->rsp);
 }
 
-// Set stack pointer
+/**
+* Save current stack pointer for the kernel thread currently
+* running on this CPU. The stack pointer is important because
+* all the context information for the thread is stored on the stack.
+*/
 void kthread_save_rsp(uint64_t rsp) {
     env_lock_env();
     curkt->rsp = rsp;
     unlock_env();
 }
 
-// Get top of stack for this cpu
+/**
+* Get top of the main kernel thread stack for this cpu,
+* i.e. not-kernel thread stacks.
+* This is used when a kernel thread is executed or finished
+* and we want to give the control back to the kernel main thread.
+*/
 uint64_t get_cpu_kernel_stack_top() {
     return KSTACK_TOP - (KSTACK_SIZE + KSTACK_GAP) * cpunum();
 }
 
-// Kernel thread interrupted itself, save state and call scheduler again
+/**
+* Reset kernel thread timing information and call a scheduler.
+* This function is called after a kernel thread interrupts itself
+* voluntarily. At this point, the stack has been switched to main
+* kernel thread stack for this CPU.
+*/
 void kthread_yield() 
 {
     cprintf("[KTHREAD_INTER] start\n");
@@ -120,7 +145,12 @@ void kthread_yield()
     sched_yield();
 }
 
-// Kernel thread is finished, reset state and kthread struct
+/**
+* Reset kernel thread structure to prepare it for the next run
+* (from the beginning) and call a scheduler.
+* At this point, the stack has been switched to main kernel
+* thread stack for this CPU.
+*/
 void kthread_finish()
 {
     cprintf("[KTHREAD_FINISH] start\n");
@@ -142,9 +172,11 @@ void kthread_finish()
 }
 
 // ------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------
-// ZUZANA TODO move this to another file kthreads.c or something where all
-// entry functions for kernel threads will be
+
+/**
+* Dummy function for testing kernel threads. This might be moved into another
+* file for Lab7.
+*/
 void kthread_dummy() {
     cprintf("[KTHREAD_DUMMY] start\n");
     

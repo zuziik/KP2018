@@ -124,7 +124,9 @@ sysret64:
     /* LAB 3: your code here. */
     sysretq
 
-
+# Voluntary interrupt of a kernel thread:
+# saves context, switches stack to a kernel
+# main thread stack and calls a scheduler
 .global kthread_interrupt
 kthread_interrupt:
 
@@ -163,6 +165,8 @@ kthread_interrupt:
 
     jmp kthread_yield
 
+# Finishes execution of a kernel thread, restores the default values,
+# switches to a kernel main thread stack and calls a scheduler
 .global kthread_end
 kthread_end:
     
@@ -173,7 +177,7 @@ kthread_end:
 
     jmp kthread_finish
 
-
+# Restores the context of the kernel thread and resumes its execution
 .global kthread_restore_context
 kthread_restore_context:
 

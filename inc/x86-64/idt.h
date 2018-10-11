@@ -69,7 +69,7 @@ struct int_frame {
     uint64_t rip, cs, rflags, rsp, ss;
 };
 
-// Variant of int_frame for kernel threads with less variables
+// Structure to store a context of a kernel thread
 struct kthread_frame {
     uint64_t ds;
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8;

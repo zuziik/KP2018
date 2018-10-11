@@ -67,8 +67,8 @@ struct env {
     struct vma *vma;
 
     // Array of allocated VMAs (this is in order on disk, unlike the previous one)
-    // --> this pointer always shows at the first VMA and we can access them all
-    // as an array
+    // --> this pointer always points at the first VMA and we can access them all
+    // as an array (used when allocating a new environment)
     struct vma *vma_array;
 
     // Keep track of the timeslice                     
@@ -106,12 +106,12 @@ struct vma {
 
 
 struct kthread {
-    envid_t kt_id;                  /* Unique environment identifier */
-    unsigned kt_status;             /* Status of the environment */
+    envid_t kt_id;                  /* Unique kernel thread identifier */
+    unsigned kt_status;             /* Status of the kernel thread */
     int kt_cpunum;                  /* The CPU that the env is running on */
-    uint64_t start_rip;             /* RIP of the kernel thread routine */
+    uint64_t start_rip;             /* address of the kernel thread routine start */
     uint64_t start_rbp;             /* TOP of the stack for the kernel thread */
-    void *top;
+    void *top;                      /* also top of the stack but of another type */
     uint64_t rsp;                   /* Current stack pointer for the kernel thread */
 
     // Keep track of the timeslice                     

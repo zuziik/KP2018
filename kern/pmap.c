@@ -107,6 +107,7 @@ void mem_init(struct boot_info *boot_info)
     struct vma *vma_list;
     struct vma *vma_tmp;
 
+
     cprintf("[MEM_INIT] START\n");
 
     /* Find the amount of pages to allocate structs for. */
@@ -173,8 +174,8 @@ void mem_init(struct boot_info *boot_info)
     cprintf("MAX_KTHREADS: %d\n", MAX_KTHREADS);
 
     for (i = 0; i < MAX_KTHREADS; i++) {
-        kthreads[i].start_rbp = (int64_t) boot_alloc(KTHREAD_STACK_SIZE);
         kthreads[i].top = boot_alloc(KTHREAD_STACK_SIZE);
+        kthreads[i].start_rbp = (int64_t) kthreads[i].top;
     }
 
     /*********************************************************************
