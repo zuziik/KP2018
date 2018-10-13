@@ -391,10 +391,13 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
     else {
         new_page = page_alloc(ALLOC_ZERO);
         memcpy((void *) KADDR(page2pa(new_page)), (void *) KADDR(page2pa(old_page)), PAGE_SIZE);
-        page_decref(old_page);
-        page_increm(new_page);
+        // this will both remove the old mapping and create a new mapping,
+        // and also update the refcounts
+        page_insert(curenv->env_pml4, new_page, (void *) fault_va_aligned, perm);
+        // page_decref(old_page);
+        // page_increm(new_page);
         cprintf("[PAGE_FAULT_HANDLER] -> pp_ref | new = %d | old = %d\n", new_page->pp_ref, old_page->pp_ref);
-        *pt_entry = page2pa(new_page) | perm;
+        // *pt_entry = page2pa(new_page) | perm;
         cprintf("[PAGE_FAULT_HANDLER] -> cow - copying and changing perms\n");
     }
 

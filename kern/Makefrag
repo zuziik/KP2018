@@ -43,6 +43,10 @@ KERN_SRCFILES += \
 	kern/lock.c \
 	kern/kthread.c
 
+# Source files for LAB 7.
+KERN_SRCFILES += \
+	kern/ide.c
+
 # Only build files if they exist.
 KERN_SRCFILES := $(wildcard $(KERN_SRCFILES))
 
@@ -78,6 +82,10 @@ KERN_BINFILES += \
 KERN_BINFILES += \
 	user/mcorefork \
 	user/stresssched
+
+# Binary files for LAB 7.
+KERN_BINFILES += \
+	user/mempress
 
 KERN_OBJFILES := $(patsubst %.c, $(OBJDIR)/%.o, $(KERN_SRCFILES))
 KERN_OBJFILES := $(patsubst %.S, $(OBJDIR)/%.o, $(KERN_OBJFILES))
@@ -120,6 +128,13 @@ $(OBJDIR)/kern/kernel.img: $(OBJDIR)/kern/kernel $(OBJDIR)/boot/boot
 	$(V)dd if=$(OBJDIR)/boot/boot of=$(OBJDIR)/kern/kernel.img~ conv=notrunc 2>/dev/null
 	$(V)dd if=$(OBJDIR)/kern/kernel of=$(OBJDIR)/kern/kernel.img~ seek=3 conv=notrunc 2>/dev/null
 	$(V)mv $(OBJDIR)/kern/kernel.img~ $(OBJDIR)/kern/kernel.img
+
+# How to create an empty hdd image for swapping
+$(OBJDIR)/kern/swap.img:
+	@echo + mk $@
+	$(V)echo -n "SWAP" > $(OBJDIR)/kern/swap.img~
+	$(V)dd if=/dev/zero of=$(OBJDIR)/kern/swap.img~ bs=1M seek=1 count=127 conv=notrunc 2>/dev/null
+	$(V)mv $(OBJDIR)/kern/swap.img~ $(OBJDIR)/kern/swap.img
 
 all: $(OBJDIR)/kern/kernel.img
 
