@@ -14,6 +14,10 @@
  * with page2pa() in kern/pmap.h.
  */
 struct page_info {
+    /* Double-linked list for page_faults, used for page reclaiming */
+    struct page_info *fault_next;
+    struct page_info *fault_prev;
+
     /* Next and previous page on the free list. */
     struct page_info *pp_link;
     struct page_info *previous;
@@ -27,6 +31,6 @@ struct page_info {
 
     /* Is in the free list or not */
     uint16_t is_available;
+
 };
 #endif /* !__ASSEMBLER__ */
-

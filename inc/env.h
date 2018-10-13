@@ -28,7 +28,7 @@ typedef int32_t envid_t;
  * stands for the current environment.
  */
 
-#define LOG2NENV        10
+#define LOG2NENV        7
 #define NENV            (1 << LOG2NENV)
 #define ENVX(envid)     ((envid) & (NENV - 1))
 #define MAXTIMESLICE    100000000

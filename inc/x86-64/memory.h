@@ -39,9 +39,10 @@
 #define KTHREAD_STACK_TOP KSTACK_TOP - (KSTACK_SIZE + KSTACK_GAP) * NCPU
 #define KTHREAD_STACK_SIZE (2 * PAGE_SIZE)
 #define KTHREAD_STACK_GAP (PAGE_SIZE)
+#define KTHREADS_BOT (KTHREAD_STACK_TOP - (KTHREAD_STACK_SIZE + KTHREAD_STACK_GAP) * MAX_KTHREADS)
 
 /* Kthreads lists */
-#define KTHREADS (KTHREAD_STACK_TOP - (KTHREAD_STACK_SIZE + KTHREAD_STACK_GAP) * MAX_KTHREADS)
+#define KTHREADS (KTHREADS_BOT - ROUNDUP(MAX_KTHREADS * sizeof(struct kthread), PAGE_SIZE))
 
 /* User address space limit. */
 #ifdef __ASSEMBLER__
@@ -67,4 +68,3 @@
 /* Used for temporary page mappings. Typed as a void pointer as a convenience.
  */
 #define UTEMP ((void *)PAGE_SIZE)
-

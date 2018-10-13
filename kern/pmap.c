@@ -108,7 +108,6 @@ void mem_init(struct boot_info *boot_info)
     struct vma *vma_list;
     struct vma *vma_tmp;
 
-
     cprintf("[MEM_INIT] START\n");
 
     /* Find the amount of pages to allocate structs for. */
@@ -153,6 +152,8 @@ void mem_init(struct boot_info *boot_info)
         pages[i].pp_ref = 0;
         pages[i].is_huge = 0;
         pages[i].is_available = 0;
+        pages[i].fault_next = NULL;
+        pages[i].fault_prev = NULL;
     }
 
     /*********************************************************************
@@ -173,6 +174,7 @@ void mem_init(struct boot_info *boot_info)
     //----------------------------------------------------------------------------------------
 
     cprintf("MAX_KTHREADS: %d\n", MAX_KTHREADS);
+    cprintf("NENVS: %d\n", NENV);
 
     for (i = 0; i < MAX_KTHREADS; i++) {
         kthreads[i].top = boot_alloc(KTHREAD_STACK_SIZE);
@@ -189,6 +191,14 @@ void mem_init(struct boot_info *boot_info)
         vma_list = boot_alloc(sizeof(struct vma)*MAX_VMAS);
         envs[i].vma_array = vma_list;
     }
+
+    /*********************************************************************
+     * Alloc page_faults array to save all the page faults in
+     * for page reclaiming.
+     * Max is npages since you cant have more unique page faults
+     * for missing physical pages than the max amount of physical pages
+     */
+    // page_faults = boot_alloc(sizeof(struct page_fault) * npages);
 
     /*********************************************************************
      * Now that we've allocated the initial kernel data structures, we set
@@ -258,6 +268,11 @@ void mem_init(struct boot_info *boot_info)
             page_walk(kern_pml4, (void *)vi, CREATE_NORMAL);
         }
     }
+
+    // Map page_faults list RW | None
+    // boot_map_region(kern_pml4, PAGE_FAULTS_, 
+    //     ROUNDUP(npages * sizeof(struct page_fault), PAGE_SIZE),
+    //     PADDR(page_faults), PAGE_WRITE | PAGE_NO_EXEC);
 
     /*********************************************************************
      * Use the physical memory that 'bootstack' refers to as the kernel

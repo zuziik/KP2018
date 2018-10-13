@@ -1,5 +1,9 @@
 #include <kern/swap.h>
+#include <kern/pmap.h>
 
+// struct page_fault *page_faults = NULL;
+struct page_info *page_fault_head = NULL;
+struct page_info *page_fault_tail = NULL;
 
 void swap_alloc_update_counters(int huge) {
 	if (huge)
@@ -88,12 +92,36 @@ void dec_freepages(size_t num) {
 * Expects fault_va to be aligned.
 */
 void page_fault_queue_insert(uintptr_t fault_va) {
-	// Double-linked list manipulation.
-	// Question - will there be any restrictions on the list size?
-	// We don't want to record ALL page faults that ever happened.
-	// Question - should we also call this after COW?
-	// Do we want to support huge pages as well? Now it's only for
-	// small pages.
+	struct vma *vma;
+	struct page_info *page;
+	physaddr_t *pt_entry = NULL;
+
+	page = page_lookup(curenv->env_pml4, (void *) fault_va, &pt_entry);
+
+	// Corner cases: empty(-ish) list
+	if (page_fault_head == NULL) {
+		page_fault_head = page;
+	}
+
+	if (page_fault_tail == NULL) {
+		page_fault_tail = page;
+	}
+
+	// COW - page is already in list - corner cases
+	// if (page == page_fault_head) {
+	// 	if (page == page_fault_tail) {
+
+	// 	}
+	// }
+
+	// TODO: COW - remap already existing entry
+	// so reconnect list
+
+	// Add to end
+	page_fault_tail->fault_prev = page;
+	page->fault_next = page_fault_tail;
+	page->fault_prev = NULL;
+	page_fault_tail = page;
 }
 
 /**

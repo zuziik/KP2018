@@ -8,6 +8,14 @@ size_t highest_rss;
 size_t current_rss;
 int oom_i;
 
+// Struct(s) used to save faulting page faults
+// extern struct page_fault *page_faults;
+
+struct page_fault {
+	physaddr_t page_addr;
+	physaddr_t pte_addr;
+};
+
 // TODO change the constant
 #define FREEPAGE_THRESHOLD	256
 
