@@ -14,6 +14,7 @@
 
 #include <kern/lock.h>
 #include <kern/kthread.h>
+#include <kern/swap.h>
 
 /* These variables are set in mem_init() */
 size_t npages;
@@ -398,6 +399,7 @@ void page_init(struct boot_info *boot_info)
     size_t i;
     struct elf *elf_hdr = (struct elf *)(
         KERNEL_VMA + (uintptr_t)boot_info->elf_hdr);
+    size_t number_of_pages = 0;
 
     /*
      * The example code here marks all physical pages as free. However this is
@@ -448,9 +450,15 @@ void page_init(struct boot_info *boot_info)
                     page_free_list->previous = page;
                 }
                 page_free_list = page;
+
+                number_of_pages++;
             } 
         }
     }
+
+    // LAB 7
+    // For swapping - set initial value of freepages counter
+    set_freepages(number_of_pages);
 
     // Merge the small pages to create huge pages
     initial_merge(boot_info);
@@ -479,6 +487,14 @@ struct page_info *page_alloc(int alloc_flags)
     struct page_info *page;
     struct page_info *tmp;
     int i;
+
+    // LAB 7
+    // If we don't have a free page available, reclaim first
+    // This only works with small pages - if we want huge pages,
+    // it won't be so easy -- discussion needed
+    if (!available_freepages(1)) {
+        page_reclaim(1);
+    }
     
     // If out of memory, return NULL
     if (page_free_list == NULL) {
@@ -543,6 +559,12 @@ struct page_info *page_alloc(int alloc_flags)
             memset(page2kva(page), 0, PAGE_SIZE);
     }
 
+    // LAB 7
+    // Update freepages counter + possibly environment counters
+    if (page != NULL) {
+        swap_alloc_update_counters(alloc_flags & ALLOC_HUGE);
+    }
+
     unlock_page_lock_env(lock);
     return page;
 }
@@ -581,6 +603,10 @@ void page_free(struct page_info *pp)
     }
     pp->previous = NULL;
     pp->is_available = 1;
+
+    // LAB 7
+    // Update freepage counters
+    swap_free_update_counters(pp->is_huge);
 
     // If small page is added, check if huge page can be created
     if (!pp->is_huge) {

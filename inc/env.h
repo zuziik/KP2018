@@ -77,6 +77,9 @@ struct env {
 
     // For which env does it have to wait. -1 means no waiting
     envid_t pause;
+
+    // LAB 7
+    size_t used_pages;        /* Number of used physical pages */
 };
 
 /* Anonymous VMAs are zero-initialized whereas binary VMAs

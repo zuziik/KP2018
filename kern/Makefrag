@@ -45,7 +45,8 @@ KERN_SRCFILES += \
 
 # Source files for LAB 7.
 KERN_SRCFILES += \
-	kern/ide.c
+	kern/ide.c \
+	kern/swap.c
 
 # Only build files if they exist.
 KERN_SRCFILES := $(wildcard $(KERN_SRCFILES))

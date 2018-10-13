@@ -15,6 +15,7 @@
 #include <kern/pmap.h>
 #include <kern/vma.h>
 #include <kern/lock.h>
+#include <kern/swap.h>
 
 #include <inc/string.h>
 
@@ -309,6 +310,7 @@ void page_fault_handler(struct int_frame *frame)
         cprintf("[PAGE_FAULT_HANDLER] is_cow = %d - is_user = %d - is_userspace = %d\n", 
                 is_cow, is_user, fault_va_aligned < KERNEL_VMA);
         if (is_cow) {
+            page_fault_queue_insert(fault_va_aligned);
             return;
         }
         cprintf("[PAGE_FAULT_HANDLER] not cow\n");
@@ -319,6 +321,7 @@ void page_fault_handler(struct int_frame *frame)
         if (fault_va_aligned < KERNEL_VMA) {
             cprintf("[PAGE_FAULT_HANDLER] kernel tries to read user space, loading page\n");
             if (page_fault_load_page((void *) fault_va_aligned)) {
+                page_fault_queue_insert(fault_va_aligned);
                 cprintf("[PAGE_FAULT_HANDLER] page loaded\n");
                 return;
             }
@@ -333,6 +336,7 @@ void page_fault_handler(struct int_frame *frame)
         // Page is not loaded, search in vma and map it in page tables
         cprintf("[PAGE_FAULT_HANDLER] loading page\n");
         if (page_fault_load_page((void *) fault_va_aligned)) {
+            page_fault_queue_insert(fault_va_aligned);
             cprintf("[PAGE_FAULT_HANDLER] page loaded\n");
             return;
         }
