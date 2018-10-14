@@ -66,6 +66,7 @@ void inc_tables_in_env(struct env *e);
 void dec_tables_in_env(struct env *e);
 
 int available_freepages(size_t num);
+void page_fault_remove(struct page_info *page);
 void page_fault_queue_insert(uintptr_t fault_va);
 int page_reclaim(size_t num);
 int swap_pages();

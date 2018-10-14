@@ -64,7 +64,6 @@ enum {
     CREATE_HUGE   = 1<<1,
 };
 
-size_t get_npages();
 void mem_init(struct boot_info *boot_info);
 void user_mem_assert(struct env *env, const void *va, size_t len, int perm);
 

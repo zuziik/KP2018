@@ -40,11 +40,6 @@ static void check_page_hugepages(void);
 static void check_page_installed_pml4(void);
 static void check_wx(void);
 
-
-size_t get_npages() {
-    return npages;
-}
-
 /* This simple physical memory allocator is used only while JOS is setting up
  * its virtual memory system.  page_alloc() is the real allocator.
  *
@@ -84,6 +79,8 @@ static void *boot_alloc(uint32_t n)
     if ((unsigned long long)nextfree >= virt_max) {
         panic("Out of virtual memory in boot_alloc\n");
     }
+
+    cprintf("result:       %llx | nextfree: %llx\n", result, nextfree);
 
     return result;
 }
@@ -191,12 +188,23 @@ void mem_init(struct boot_info *boot_info)
      * Make 'envs' point to an array of size 'NENV' of 'struct env'.
      * LAB 3: your code here.
      */
-    envs = boot_alloc(sizeof(struct env)*NENV);
+    envs = boot_alloc(sizeof(struct env) * NENV);
 
+    cprintf("IO_PHYS_MEM:  %llx\n", KERNEL_VMA + IO_PHYS_MEM);
+    cprintf("EXT_PHYS_MEM: %llx\n", KERNEL_VMA + EXT_PHYS_MEM);
+    cprintf("BEFORE\n");
     for (i = 0; i < NENV; i++) {
-        vma_list = boot_alloc(sizeof(struct vma)*MAX_VMAS);
-        envs[i].vma_array = vma_list;
+        cprintf("envs[i]: %llx | &envs[i]: %llx\n", envs, &envs[i]);
+        cprintf("envs+0: %llx | envs[0]: %llx\n", envs+0, envs[0]);
+        cprintf("envs[i].vma_array: %llx\n", envs[i].vma_array);
+        cprintf("&envs[i]->vma_array: %llx\n", (&envs[i])->vma_array);
+        (&envs[i])->vma_array = NULL;
+        cprintf("i: %d\n", i);
+        // vma_list = boot_alloc(sizeof(struct vma)*MAX_VMAS);
+        cprintf("i: %d\n", i);
+        // envs[i].vma_array = vma_list;
     }
+    cprintf("AFTER\n");
 
     /*********************************************************************
      * Alloc page_faults array to save all the page faults in
@@ -636,6 +644,9 @@ void page_free(struct page_info *pp)
     if (!pp->is_huge) {
         merge_after_free(pp);
     }
+
+    // Remove the page from page fault list if it was there
+    page_fault_remove(pp);
 }
 
 /*
@@ -748,7 +759,11 @@ int entry_in_table(physaddr_t *entry, int create)
                 return 0;
             }
 
-            if (curenv) inc_tables_in_env(curenv);
+            // Increment table counter if running an user env
+            if (curenv && curenv->env_status == ENV_RUNNING && curenv->env_cpunum == cpunum()) {
+                inc_tables_in_env(curenv);
+            }
+
             page_increm(page);
             new = (struct page_table *)KADDR(page2pa(page));
             *entry = PADDR(new) | PAGE_PRESENT | PAGE_USER | PAGE_WRITE;

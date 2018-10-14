@@ -92,3 +92,22 @@ void env_unlock_env(int kern) {
         unlock_env();
     }
 }
+
+// swap.c: lock pagealloc when editing fields in page_info
+int swap_lock_pagealloc() {
+    int kern = 0;
+
+    if (!holding(&pagealloc_lock)) {
+        kern++;
+        lock_pagealloc();
+    }
+
+    return kern;
+}
+
+// swap.c: unlock pagealloc when done editing fields in page_info
+void swap_unlock_pagealloc(int kern) {
+    if (kern) {
+        unlock_pagealloc();
+    }
+}

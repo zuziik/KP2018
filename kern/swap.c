@@ -140,7 +140,11 @@ int swap_out(struct page_info *p) {
 	}
 
 	// 6. Free the physical page
-	page_free(p);
+	if (p->pp_ref != 0) {
+		panic("[SWAP_OUT] Didn't remove all the mappings to the swapped out page");
+	}
+	p->pp_ref = 1;
+	page_decref(p);
 
 	// 7. Add the slot to every VMA swapped_pages list
 	mapping = slot->reverse_mapping;
@@ -413,33 +417,29 @@ void dec_tables_in_env(struct env *e) {
 	e->num_tables--;
 }
 
-/**
-* Inserts the faulting VA at the end of a faulting
-* pages queue (first FIFO, later CLOCK).
-* This function is called from the page fault handler,
-* but only after a new page is allocated (i.e. not
-* if the page fault was a permission issue).
-* Expects fault_va to be aligned.
-* Clock will be enforced in swap_pages()
-*/
-void page_fault_queue_insert(uintptr_t fault_va) {
-	struct vma *vma;
-	struct page_info *page;
-	physaddr_t *pt_entry = NULL;
-	page = page_lookup(curenv->env_pml4, (void *) fault_va, &pt_entry);
 
-	// Corner cases: empty list
-	if (page_fault_head == NULL && page_fault_tail == NULL) {
-		page_fault_head = page;
-		page_fault_tail = page;
+/**
+* Check if the page is part of the page fault list
+* If so, remove it from the list and fix the pointers and globals
+*/
+void page_fault_remove(struct page_info *page) {
+	// Is the only element in the list, only used to remove from page_free
+	if (page == page_fault_head && page == page_fault_tail) {
+		page_fault_head = NULL;
+		page_fault_tail = NULL;
 	}
-	// COW: page is already in list and list > 1, remove current position
-	else if (page->fault_next != NULL || page->fault_prev != NULL) {
+	// Remove if tail, only use to remove from page_free
+	else if (page == page_fault_tail) {
+		page_fault_tail = page_fault_tail->fault_next;
+		page->fault_next = NULL;
+	}
+
+	// Length list is > 1
+	if (page->fault_next != NULL || page->fault_prev != NULL) {
 		// Page is head
 		if (page == page_fault_head) {
 			page_fault_head = page->fault_prev;
 			page_fault_head->fault_next = NULL;
-			page->fault_next = NULL;
 			page->fault_prev = NULL;
 		} 
 		// Page is not tail, remove from middle
@@ -450,26 +450,61 @@ void page_fault_queue_insert(uintptr_t fault_va) {
 			page->fault_prev = NULL;
 		}
 	}
+}
 
-	// Append to the back
-	if (page != page_fault_tail) {
+/**
+* Inserts the faulting VA at the end of a faulting
+* pages queue (first FIFO, later CLOCK).
+* This function is called from the page fault handler,
+* but only after a new page is allocated (i.e. not
+* if the page fault was a permission issue).
+* Expects fault_va to be aligned.
+* Clock will be enforced in swap_pages()
+*/
+void page_fault_queue_insert(uintptr_t fault_va) {
+	int lock = swap_lock_pagealloc();
+
+	struct vma *vma;
+	struct page_info *page;
+	physaddr_t *pt_entry = NULL;
+	page = page_lookup(curenv->env_pml4, (void *) fault_va, &pt_entry);
+
+	// Corner cases: empty list
+	if (page_fault_head == NULL && page_fault_tail == NULL) {
+		page_fault_head = page;
+		page_fault_tail = page;
+	}
+	// Remove from the list if already there and append to the back
+	else if (page != page_fault_tail) {
+		// Check if page was already in the list and if so, remove (COW)
+		page_fault_remove(page);
+
+		// Append to the back
 		page_fault_tail->fault_prev = page;
 		page->fault_next = page_fault_tail;
 		page->fault_prev = NULL;
 		page_fault_tail = page;
 	}
+
+	swap_unlock_pagealloc(lock);
 }
 
 // Pop the head of the page fault list
 // TODO: implement CLOCK
 struct page_info *page_fault_pop_head() {
+	int lock = swap_lock_pagealloc();
 	struct page_info *page;
+
+	// Page fault list is empty
 	if (page_fault_head == NULL) {
+		swap_unlock_pagealloc(lock);
 		return NULL;
 	}
+
 	// Pop head and update
 	page = page_fault_head;
 	page_fault_head = page_fault_head->fault_prev;
+
 	// Check corner cases: empty list
 	if (page_fault_head != NULL) {
 		page_fault_head->fault_next = NULL;
@@ -477,25 +512,12 @@ struct page_info *page_fault_pop_head() {
 		// If head is NULL, tail is also NULL
 		page_fault_tail = NULL;
 	}
+
 	page->fault_next = NULL;
 	page->fault_prev = NULL;
-	return page;
-}
 
-/**
-* On-demand page reclaiming called if we are out-of memory (in page_alloc).
-* We could also be out-of-memory in boot_alloc but that would be a worse
-* problem and we don't want to swap kernel pages, so we don't call this
-* function from there.
-* Returns 1 (success) / 0 (fail)
-*/
-int page_reclaim(size_t num) {
-    // First, try to swap num pages.
-	// Num - because we might want to support small/huge pages.
-    if (! swap_pages())
-    	// If not successful, go for OOM killing.
-    	return oom_kill_process();
-    return 1;
+	swap_unlock_pagealloc(lock);
+	return page;
 }
 
 /**
@@ -510,13 +532,13 @@ int swap_pages() {
 	int to_free = FREEPAGE_THRESHOLD + FREEPAGE_OVERTHRESHOLD - nfreepages;
 	int i;
 	struct page_info *page;
+
 	// Pop to_free times and swap out
 	for (i = 0; i < to_free; i++) {
 		page = page_fault_pop_head();
-		if (page == NULL) {
-			return 0;
-		}
-		if (!swap_out(page)) {
+
+		// If something doesnt work, do oom killing
+		if (page == NULL || !swap_out(page)) {
 			return 0;
 		}
 	}
@@ -538,7 +560,7 @@ int oom_kill_process() {
     	// TODO fix - compute RSS score using env.used_pages
     	// I don't get the formula - what is RSS there?
     	current_rss = (envs[counter].num_alloc + envs[counter].num_swap + envs[counter].num_tables)
-    	 / PAGE_SIZE + get_npages()/1000;
+    	 / PAGE_SIZE + npages/1000;
     	cprintf("OOM process %llx, alloc %d, score %d\n", envs[counter].env_id, envs[counter].num_alloc, current_rss);
     	if (current_rss > highest_rss) {
     		highest_rss = current_rss;
@@ -573,6 +595,22 @@ int oom_kill_process() {
 }
 
 /**
+* On-demand page reclaiming called if we are out-of memory (in page_alloc).
+* We could also be out-of-memory in boot_alloc but that would be a worse
+* problem and we don't want to swap kernel pages, so we don't call this
+* function from there.
+* Returns 1 (success) / 0 (fail)
+*/
+int page_reclaim(size_t num) {
+    // First, try to swap num pages.
+	// Num - because we might want to support small/huge pages.
+    if (! swap_pages())
+    	// If not successful, go for OOM killing.
+    	return oom_kill_process();
+    return 1;
+}
+
+/**
 * KERNEL THREAD
 * Periodically checks whether the number of free pages is above a given threshold.
 * If not, swaps enough pages to have FREEPAGE_THRESHOLD free pages.
@@ -586,3 +624,5 @@ void kthread_swap() {
         kthread_interrupt();
     }
 }
+
+

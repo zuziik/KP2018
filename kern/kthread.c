@@ -40,7 +40,7 @@ void kthread_init_context(struct kthread *kt) {
 * Create a kernel thread
 * For Lab7, support for the arguments might be added.
 */
-void kthread_create(void *(*start_routine)) 
+void kthread_create(void *(*start_routine))  
 {
     int id = 0;
     int i;
