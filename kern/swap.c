@@ -1,4 +1,5 @@
 #include <kern/swap.h>
+#include <kern/vma.h>
 
 
 // struct page_fault *page_faults = NULL;
@@ -44,14 +45,13 @@ void swap_init() {
 	// Initializing the data structure
 	for (i = 0; i < nswapslots; i++) {
         swap_slots[i].is_used = 0;
-        // swap_slots[i].ptes = NULL;
+        swap_slots[i].reverse_mapping = NULL;
         swap_slots[i].next = (i == nswapslots - 1) ? NULL : &swap_slots[i+1];
         swap_slots[i].prev = (i == 0) ? NULL : &swap_slots[i-1];
 	}
 
 	// Marking all disk slots as free, thus putting them in the free slots list
 	free_swap_slots = swap_slots;
-	swapped_pages = NULL;
 }
 
 /** 
@@ -91,6 +91,8 @@ int swap_out(struct page_info *p) {
 	// Always a small page
 	int i;
 	struct swap_slot *slot;
+	struct mapped_va *mapping;
+	int affected_envs[NENV];
 
 	slot = alloc_swap_slot();
 
@@ -103,26 +105,50 @@ int swap_out(struct page_info *p) {
 		while (!ide_is_ready());
 		ide_write_sector((char *) KADDR(page2pa(p)) + i*SECTSIZE);
 
-	// 2. Remove PTE list from page_info and map it to swap structure
-	// slot->ptes = p->ptes;
+	// 2. Remove VMA list from page_info and map it to swap structure
+	slot->reverse_mapping = p->reverse_mapping;
+	p->reverse_mapping = NULL;
 
 	// 3. Zero-out all entries pointing to this physical page and
 	// decrease reference count on the page
-	// + set SWAPPED OUT flag
+	mapping = slot->reverse_mapping;
+	while (mapping != NULL) {
+		// Problem with invalidating TLB cache, see tlb_invalidate() implementation
+		page_remove(mapping->e->env_pml4, mapping->va);
+		mapping = mapping->next;
+	}
 
 	// 4. Update num_swap field of each affected env (number of swapped out
 	// pages, used by OOM) using inc_swapped_in_env()
+	// 5. Update num_alloc field for each affected env (dec_alloc_in_env())
 
-	// 5. Flush TLB caches. Currently there is a problem - it only flushes
-	// pages of the current environment. Need to fix this!
+	for (i = 0; i < NENV; i++) {
+		affected_envs[i] = 0;
+	}
+
+	mapping = slot->reverse_mapping;
+	while (mapping != NULL) {
+		affected_envs[env2i(mapping->e)] = 1;
+		mapping = mapping->next;
+	}
+
+	for (i = 0; i < NENV; i++) {
+		if (affected_envs[i]) {
+			envs[i].num_swap++;
+			envs[i].num_alloc--;
+		}
+	}
 
 	// 6. Free the physical page
 	page_free(p);
 
-	// 7. Update num_alloc field for each affected env (dec_alloc_in_env())
+	// 7. Add the slot to every VMA swapped_pages list
+	mapping = slot->reverse_mapping;
+	while (mapping != NULL) {
+		vma_add_swapped_page(mapping->e, mapping->va, slot);
+		mapping = mapping->next;
+	}
 
-	// 8. Add the slot to swapped_pages list (this will be used for faster looking for
-	// a swapped page from page fault handler)
 
 	return 1;
 }
@@ -137,6 +163,8 @@ int swap_out(struct page_info *p) {
 int swap_in(struct swap_slot *slot) {
 
 	int i;
+	struct mapped_va *mapping;
+	int affected_envs[NENV];
 
 	// 1. Allocate a page
 	struct page_info *p = page_alloc(0);
@@ -152,19 +180,159 @@ int swap_in(struct swap_slot *slot) {
 	// 3. Free the swap space
 	free_swap_slot(slot);
 
-	// 4. Walk the slot->ptes linked list and map the page everywhere
+	// 4. Walk the saved reverse mappings and map the page everywhere
 	// it was mapped before + increase the refcount with each mapping
+	mapping = slot->reverse_mapping;
+	while (mapping != NULL) {
+		page_insert(mapping->e->env_pml4, mapping->va, p, mapping->perm);
+		mapping = mapping->next;
+	}
 
 	// 5. Update num_swap field of each affected env (number of swapped out
 	// pages, used by OOM) using dec_swapped_in_env()
 
 	// 6. Update num_alloc field for each affected env (inc_alloc_in_env())
+	for (i = 0; i < NENV; i++) {
+		affected_envs[i] = 0;
+	}
 
-	// 7. Remove the slot from swapped_pages list
+	mapping = slot->reverse_mapping;
+	while (mapping != NULL) {
+		affected_envs[env2i(mapping->e)] = 1;
+		mapping = mapping->next;
+	}
+
+	for (i = 0; i < NENV; i++) {
+		if (affected_envs[i]) {
+			envs[i].num_swap--;
+			envs[i].num_alloc++;
+		}
+	}
+
+	// 7. Remove the slot from swapped_pages list of each VMA
+	mapping = slot->reverse_mapping;
+	while (mapping != NULL) {
+		vma_remove_swapped_page(mapping->e, mapping->va);
+		mapping = mapping->next;
+	}
+
+	// 8. Correctly set the reverse mappings to the new page
+	p->reverse_mapping = slot->reverse_mapping;
+	slot->reverse_mapping = NULL;
 
 	return 1;
 }
-       
+
+/**
+* Remove a reverse mapping from a physical page
+*/
+void remove_reverse_mapping(struct env *e, void *va, struct page_info *page) {
+
+	struct mapped_va *curr = page->reverse_mapping;
+	struct mapped_va *prev = page->reverse_mapping;
+
+	// First one? Remove head
+	// Is it ok that we just let the removed structure go? No free?
+	if ((curr->va == va) && (curr->e == e)) {
+		page->reverse_mapping = curr->next;
+		return;
+	}
+
+	curr = curr->next;
+
+	while (curr != NULL) {
+		if ((curr->va == va) && (curr->e == e)) {
+			prev->next = curr->next;
+			return;
+		}
+		prev = curr;
+		curr = curr->next;
+	}	
+}
+
+/**
+* Remove reverse mappings of this environment from all pages
+* Called from env_free()
+*/
+void env_remove_reverse_mappings(struct env *e) {
+	//TODO
+	// For this, we either must walk all pages (!),
+	// or update env_free_page_tables() to have information about the environment
+}
+
+
+/**
+* Adds a reverse mapping to a physical page
+*/
+void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int perm) {
+	struct mapped_va mapping;
+	mapping.va = va;
+	mapping.perm = perm;
+	mapping.e = e;
+	mapping.next = page->reverse_mapping;
+
+	page->reverse_mapping = &mapping;
+}
+
+/**
+* Searches swapped pages list of the given VMA and looks for the given VA.
+* If found, returns pointer to the swap slot where the page is swapped out.
+*/
+struct swap_slot *vma_lookup_swapped_page(struct vma *vma, void *va) {
+	struct swapped_va *swapped = vma->swapped_pages;
+	while ((swapped != NULL) && (swapped->va != va)) {
+		swapped = swapped->next;
+	}
+	return swapped->slot;
+}
+ 
+/**
+* Adds the VA and swap slot to the corresponding VMA list of swapped out pages.
+*/     
+void vma_add_swapped_page(struct env *e, void *va, struct swap_slot *slot) {
+	struct vma *vma = vma_lookup(e, va);
+	if (vma == NULL)
+		return;
+
+	// Is THIS how we want to allocate it? Probably not, but then how?
+	struct swapped_va swapped;
+	swapped.va = va;
+	swapped.slot = slot;
+	swapped.next = vma->swapped_pages;
+
+	vma->swapped_pages = &swapped;
+}
+
+/**
+* Removes the VA from the corresponding VMA list of swapped out pages.
+*/
+void vma_remove_swapped_page(struct env *e, void *va) {
+	struct vma *vma = vma_lookup(e, va);
+	if (vma == NULL)
+		return;
+
+	struct swapped_va *curr = vma->swapped_pages;
+	struct swapped_va *prev = vma->swapped_pages;
+
+	// First one? Remove head
+	// Is it ok that we just let the removed structure go? No free?
+	if (curr->va == va) {
+		vma->swapped_pages = curr->next;
+		return;
+	}
+
+	curr = curr->next;
+
+	while (curr != NULL) {
+		if (curr->va == va) {
+			prev->next = curr->next;
+			return;
+		}
+		prev = curr;
+		curr = curr->next;
+	}
+}
+
 
 /**
 * Initializes freepages counter. Called during boot.

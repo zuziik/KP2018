@@ -107,8 +107,10 @@ struct vma {
     void* file_va;      // Not alligned virt addr kernel space, binary source
     uint64_t mem_size;  // "..." length "... ", binary dest length
     uint64_t file_size; // "..." length "... ", binary source length
-};
 
+    /* LAB 7 currently swapped out VAs */
+    struct swapped_va *swapped_pages;
+};
 
 struct kthread {
     envid_t kt_id;                  /* Unique kernel thread identifier */

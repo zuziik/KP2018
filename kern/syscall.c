@@ -342,6 +342,7 @@ int copy_pml4(struct env *old, struct env *new) {
         if (alloc_table(pml4_old, pml4_new, s) < 0) {
             return -1;
         }
+        // LAB 7
         inc_tables_in_env(new);
 
         // Loop through pdp entries
@@ -354,6 +355,7 @@ int copy_pml4(struct env *old, struct env *new) {
             if (alloc_table(pdpt_old, pdpt_new, t) < 0) {
                 return -1;
             }
+            // LAB 7
             inc_tables_in_env(new);
 
             // Loop through pd entries
@@ -370,12 +372,15 @@ int copy_pml4(struct env *old, struct env *new) {
                     cprintf("[1]phys_addr = %llx\n", pgdir_old->entries[u]);
                     page = pa2page(PAGE_ADDR(pgdir_old->entries[u]));
                     page_increm(page);
+                    // LAB 7
+                    add_reverse_mapping(new, (void *) (s << PML4_SHIFT | t << PDPT_SHIFT | u << PAGE_DIR_SHIFT), page, pgdir_old->entries[u] & PAGE_MASK);
                     continue;
                 }
 
                 if (alloc_table(pgdir_old, pgdir_new, u) < 0) {
                     return -1;
                 }
+                // LAB 7
                 inc_tables_in_env(new);
 
                 // Loop through page table
@@ -389,6 +394,7 @@ int copy_pml4(struct env *old, struct env *new) {
                     pt_new->entries[v] = pt_old->entries[v];  
                     page = pa2page(PAGE_ADDR(pt_old->entries[v]));
                     page_increm(page);
+                    add_reverse_mapping(new, (void *)(s << PML4_SHIFT | t << PDPT_SHIFT | u << PAGE_DIR_SHIFT | v << PAGE_TABLE_SHIFT), page, pt_old->entries[v] & PAGE_MASK);
                 }
             }
         }

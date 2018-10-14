@@ -32,9 +32,8 @@ struct page_info {
     /* Is in the free list or not */
     uint16_t is_available;
 
-    /* Linked list of VAs mapping this physical page */
-    // PROBLEM - do we need to remember environment as well? For TLB flushing.
-    // uintptr_t *vas; OR physaddr_t *ptes;
+    /* Linked list of VMAs that contain(ed) VAs mapping this physical page */
+    struct mapped_va *reverse_mapping;
 };
 #endif /* !__ASSEMBLER__ */
 

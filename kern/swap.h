@@ -13,7 +13,6 @@ int counter;
 uint32_t nswapslots;					/* Total number of swap slots on disk (not updated on alloc/free) */
 struct swap_slot *swap_slots;			/* Array of all swap_slots to keep track of them */
 struct swap_slot *free_swap_slots;		/* Linked list of free swap slots */
-struct swap_slot *swapped_pages;
 
 // Struct(s) used to save faulting page faults
 // extern struct page_fault *page_faults;
@@ -25,17 +24,37 @@ struct page_fault {
 // For each PAGE_SIZE/SECTSIZE sectors on disk (aligned)
 struct swap_slot {
 	uint8_t is_used;
-	// physaddr_t *ptes; OR uintptr_t *vas; PROBLEM - what to remember if we want to be able to flush TLBs (VA and env?)
-	// maybe we just need to give up and walk all the page tables online
+	struct mapped_va *reverse_mapping; // all VAs (per env) that used to map the physical page
+				      				   // that is now swapped out in the slot
 	struct swap_slot *prev;
 	struct swap_slot *next;
 };
+
+// Structure to keep track of VAs that have been swapped out
+struct swapped_va {
+    void *va;
+    struct swap_slot *slot;
+    struct swapped_va *next;
+};
+
+// Structure to keep track of VAs that map a specific physical page
+struct mapped_va {
+	void *va;
+	struct env *e;
+	int perm;
+	struct mapped_va *next;
+};
+
 
 // TODO change the constant
 #define FREEPAGE_THRESHOLD	512
 #define SECTORS_PER_PAGE PAGE_SIZE/SECTSIZE
 
 void swap_init();
+
+int swap_in(struct swap_slot *slot);
+int swap_out(struct page_info *p);
+
 void set_nfreepages(size_t num);
 void inc_nfreepages(int huge);
 void dec_nfreepages(int huge);
@@ -53,6 +72,13 @@ int swap_pages();
 int oom_kill_process();
 void kthread_swap();
 
+void vma_remove_swapped_page(struct env *e, void *va);
+void vma_add_swapped_page(struct env *e, void *va, struct swap_slot *slot);
+struct swap_slot *vma_lookup_swapped_page(struct vma *vma, void *va);
+
+void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int perm);
+void remove_reverse_mapping(struct env *e, void *va, struct page_info *page);
+void env_remove_reverse_mappings(struct env *e);
 
 // Disk slot -> sector number on disk
 static inline uint32_t slot2sector(struct swap_slot *slot)
@@ -64,4 +90,10 @@ static inline uint32_t slot2sector(struct swap_slot *slot)
 static inline struct swap_slot *sector2slot(uint32_t secno)
 {
     return &swap_slots[secno/SECTSIZE];
+}
+
+// Environment -> index in envs array
+static inline uint32_t env2i(struct env *e)
+{
+    return (e - envs)/sizeof(struct env);
 }

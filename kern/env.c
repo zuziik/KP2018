@@ -464,7 +464,7 @@ void env_create(uint8_t *binary, enum env_type type)
     cprintf("[ENV CREATE] end\n");
 }
 
-void env_free_page_tables(struct env *e, struct page_table *page_table, size_t depth)
+void env_free_page_tables(struct page_table *page_table, size_t depth)
 {
     struct page_table *child;
     physaddr_t *entry;
@@ -485,11 +485,10 @@ void env_free_page_tables(struct env *e, struct page_table *page_table, size_t d
         if (depth) {
             /* Free the page table. */
             child = KADDR(PAGE_ADDR(*entry));
-            env_free_page_tables(e, child, depth - 1);
+            env_free_page_tables(child, depth - 1);
         } else {
             /* Free the page. */
             page_decref(pa2page(PAGE_ADDR(*entry)));
-            dec_allocated_in_env(e);
             *entry = 0;
         }
     }
@@ -516,8 +515,12 @@ void env_free(struct env *e)
     /* Free the page tables. */
     static_assert(USER_TOP % PAGE_SIZE == 0);
 
-    env_free_page_tables(e, e->env_pml4, 3);
+    env_free_page_tables(e->env_pml4, 3);
     e->env_pml4 = NULL;
+    e->num_alloc = 0;
+    e->num_tables = 0;
+
+    env_remove_reverse_mappings(e);
 
     /* Return the environment to the free list */
     e->env_status = ENV_FREE;

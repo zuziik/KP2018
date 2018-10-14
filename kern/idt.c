@@ -310,6 +310,7 @@ void page_fault_handler(struct int_frame *frame)
         cprintf("[PAGE_FAULT_HANDLER] is_cow = %d - is_user = %d - is_userspace = %d\n", 
                 is_cow, is_user, fault_va_aligned < KERNEL_VMA);
         if (is_cow) {
+            /* LAB 7 queue of faulting pages */
             page_fault_queue_insert(fault_va_aligned);
             return;
         }
@@ -394,85 +395,101 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
     }
     else {
         new_page = page_alloc(ALLOC_ZERO);
+
+        /* LAB 7 update counters */
         inc_allocated_in_env(curenv);
+
         memcpy((void *) KADDR(page2pa(new_page)), (void *) KADDR(page2pa(old_page)), PAGE_SIZE);
         // this will both remove the old mapping and create a new mapping,
         // and also update the refcounts
         page_insert(curenv->env_pml4, new_page, (void *) fault_va_aligned, perm);
-        // page_decref(old_page);
-        // page_increm(new_page);
+
+        /* LAB 7 update reverse mappings */
+        remove_reverse_mapping(curenv, (void *) fault_va_aligned, old_page);
+        add_reverse_mapping(curenv, (void *) fault_va_aligned, new_page, perm);
+
+
         cprintf("[PAGE_FAULT_HANDLER] -> pp_ref | new = %d | old = %d\n", new_page->pp_ref, old_page->pp_ref);
-        // *pt_entry = page2pa(new_page) | perm;
         cprintf("[PAGE_FAULT_HANDLER] -> cow - copying and changing perms\n");
     }
-
-    tlb_invalidate(curenv->env_pml4, (void *) fault_va_aligned);
     return 1;
 }
 
 // Do on demand paging after a page fault has occured
+// If the page is swapped out, swap it back in!
 int page_fault_load_page(void *fault_va_aligned) {
     struct vma *vma;
     struct page_info *page;
+    struct swap_slot *slot;
 
     // Get vma associated with faulting virt addr
     vma = vma_lookup(curenv, (void *)fault_va_aligned);
-    if (vma == NULL) {
+    if (vma == NULL)
         return 0;
-    } else {
-        // There is a vma associated with this virt addr, now alloc the physical page
-        page = page_alloc(ALLOC_ZERO);
-        if (page == NULL) {
-            panic("Page fault error - couldn't allocate new page\n");
-        } else if (page_insert(curenv->env_pml4, page, (void *) fault_va_aligned, vma->perm) != 0) {
-            panic("Page fault error - couldn't map new page\n");
-        } else {
-            // Copy the binary from kernel space to user space, for anonymous memory nothing more has to be done
-            if (vma->type == VMA_BINARY) {
-                // Alligned start and end in userspace (dest)
-                uintptr_t va_aligned_start = (uintptr_t) fault_va_aligned;
-                uintptr_t va_aligned_end = (uintptr_t) fault_va_aligned + PAGE_SIZE;
-
-                // Not alligned start and end of binary in kernel space
-                uintptr_t va_file_start = (uintptr_t) vma->file_va;
-                uintptr_t va_file_end = (uintptr_t) vma->file_va + vma->file_size;
-
-                // Not alligned start and end in userspace (dest)
-                uintptr_t va_mem_start = (uintptr_t) vma->mem_va;
-                uintptr_t va_mem_end = (uintptr_t) vma->mem_va + vma->mem_size;
-
-                uintptr_t va_src_start;
-                uintptr_t va_src_end;
-                uintptr_t va_dst_start;
-                uintptr_t va_dst_end;
-
-                uint64_t offset = va_file_start - va_mem_start;
-
-                // Not alligned dest in user mem can not be before start of alligned page
-                va_dst_start = (va_mem_start < va_aligned_start) ? va_aligned_start : va_mem_start;
-
-                // Not alligned dest in user mem can not be after aligned end page
-                va_dst_end = (va_mem_end > va_aligned_end) ? va_aligned_end : va_mem_end;
-
-                // Source start cannot be before file start
-                va_src_start = (va_file_start < va_aligned_start + offset) ? va_aligned_start + offset : va_file_start;
-
-                // Source end cannot be after file end
-                va_src_end = (va_file_end > va_aligned_end + offset) ? va_aligned_end + offset : va_file_end;
-
-                // Allocated zeros
-                if (va_src_end <= va_src_start)
-                    return 1;
-
-                uint64_t src_size = va_src_end - va_src_start;
-                uint64_t dst_size = va_dst_end - va_dst_start;
-                uint64_t copy_size = (src_size < dst_size) ? src_size : dst_size;
-
-                memcpy((void *) va_dst_start, (void *) va_src_start, copy_size);
-            }
-            inc_allocated_in_env(curenv);
-            return 1;
-        }
+    
+    // If the page is swapped out, swap it back in
+    slot = vma_lookup_swapped_page(vma, fault_va_aligned);
+    if (slot != NULL) {
+        swap_in(slot);
+        return 1;
     }
-    return 0;
+
+    // There is a vma associated with this virt addr, now alloc the physical page
+    page = page_alloc(ALLOC_ZERO);
+    if (page == NULL)
+        panic("Page fault error - couldn't allocate new page\n");
+    
+    if (page_insert(curenv->env_pml4, page, (void *) fault_va_aligned, vma->perm) != 0)
+        panic("Page fault error - couldn't map new page\n");
+    
+    // Copy the binary from kernel space to user space, for anonymous memory nothing more has to be done
+    if (vma->type == VMA_BINARY) {
+        // Alligned start and end in userspace (dest)
+        uintptr_t va_aligned_start = (uintptr_t) fault_va_aligned;
+        uintptr_t va_aligned_end = (uintptr_t) fault_va_aligned + PAGE_SIZE;
+
+        // Not alligned start and end of binary in kernel space
+        uintptr_t va_file_start = (uintptr_t) vma->file_va;
+        uintptr_t va_file_end = (uintptr_t) vma->file_va + vma->file_size;
+
+        // Not alligned start and end in userspace (dest)
+        uintptr_t va_mem_start = (uintptr_t) vma->mem_va;
+        uintptr_t va_mem_end = (uintptr_t) vma->mem_va + vma->mem_size;
+
+        uintptr_t va_src_start;
+        uintptr_t va_src_end;
+        uintptr_t va_dst_start;
+        uintptr_t va_dst_end;
+
+        uint64_t offset = va_file_start - va_mem_start;
+
+        // Not alligned dest in user mem can not be before start of alligned page
+        va_dst_start = (va_mem_start < va_aligned_start) ? va_aligned_start : va_mem_start;
+
+        // Not alligned dest in user mem can not be after aligned end page
+        va_dst_end = (va_mem_end > va_aligned_end) ? va_aligned_end : va_mem_end;
+
+        // Source start cannot be before file start
+        va_src_start = (va_file_start < va_aligned_start + offset) ? va_aligned_start + offset : va_file_start;
+
+        // Source end cannot be after file end
+        va_src_end = (va_file_end > va_aligned_end + offset) ? va_aligned_end + offset : va_file_end;
+
+        // Allocated zeros
+        if (va_src_end <= va_src_start)
+            return 1;
+
+        uint64_t src_size = va_src_end - va_src_start;
+        uint64_t dst_size = va_dst_end - va_dst_start;
+        uint64_t copy_size = (src_size < dst_size) ? src_size : dst_size;
+
+        memcpy((void *) va_dst_start, (void *) va_src_start, copy_size);
+    }
+
+    /* LAB 7 update counters */
+    inc_allocated_in_env(curenv);
+    /* LAB 7 add reverse mapping */
+    add_reverse_mapping(curenv, fault_va_aligned, page, vma->perm);
+
+    return 1;
 }
