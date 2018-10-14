@@ -49,6 +49,7 @@ void kmain(struct boot_info *boot_info)
 
     /* Lab 7: initialization functions */
     ide_init();
+    swap_init();
 
     /* Acquire the big kernel lock before waking up APs.
      * LAB 6: your code here. */

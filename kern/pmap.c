@@ -41,6 +41,10 @@ static void check_page_installed_pml4(void);
 static void check_wx(void);
 
 
+size_t get_npages() {
+    return npages;
+}
+
 /* This simple physical memory allocator is used only while JOS is setting up
  * its virtual memory system.  page_alloc() is the real allocator.
  *
@@ -108,6 +112,7 @@ void mem_init(struct boot_info *boot_info)
     struct vma *vma_list;
     struct vma *vma_tmp;
 
+
     cprintf("[MEM_INIT] START\n");
 
     /* Find the amount of pages to allocate structs for. */
@@ -154,6 +159,7 @@ void mem_init(struct boot_info *boot_info)
         pages[i].is_available = 0;
         pages[i].fault_next = NULL;
         pages[i].fault_prev = NULL;
+        // pages[i].ptes = NULL;
     }
 
     /*********************************************************************
@@ -199,6 +205,7 @@ void mem_init(struct boot_info *boot_info)
      * for missing physical pages than the max amount of physical pages
      */
     // page_faults = boot_alloc(sizeof(struct page_fault) * npages);
+
 
     /*********************************************************************
      * Now that we've allocated the initial kernel data structures, we set
@@ -269,10 +276,11 @@ void mem_init(struct boot_info *boot_info)
         }
     }
 
-    // Map page_faults list RW | None
+   // Map page_faults list RW | None
     // boot_map_region(kern_pml4, PAGE_FAULTS_, 
     //     ROUNDUP(npages * sizeof(struct page_fault), PAGE_SIZE),
     //     PADDR(page_faults), PAGE_WRITE | PAGE_NO_EXEC);
+
 
     /*********************************************************************
      * Use the physical memory that 'bootstack' refers to as the kernel
@@ -473,7 +481,7 @@ void page_init(struct boot_info *boot_info)
 
     // LAB 7
     // For swapping - set initial value of freepages counter
-    set_freepages(number_of_pages);
+    set_nfreepages(number_of_pages);
 
     // Merge the small pages to create huge pages
     initial_merge(boot_info);
@@ -577,7 +585,7 @@ struct page_info *page_alloc(int alloc_flags)
     // LAB 7
     // Update freepages counter + possibly environment counters
     if (page != NULL) {
-        swap_alloc_update_counters(alloc_flags & ALLOC_HUGE);
+        dec_nfreepages(alloc_flags & ALLOC_HUGE);
     }
 
     unlock_page_lock_env(lock);
@@ -587,6 +595,7 @@ struct page_info *page_alloc(int alloc_flags)
 /*
  * Return a page to the free list.
  * (This function should only be called when pp->pp_ref reaches 0.)
+ * TODO: if the page is swapped out, remove it from swap disk, not here
  */
 void page_free(struct page_info *pp)
 {
@@ -621,7 +630,7 @@ void page_free(struct page_info *pp)
 
     // LAB 7
     // Update freepage counters
-    swap_free_update_counters(pp->is_huge);
+    inc_nfreepages(pp->is_huge);
 
     // If small page is added, check if huge page can be created
     if (!pp->is_huge) {
@@ -739,6 +748,7 @@ int entry_in_table(physaddr_t *entry, int create)
                 return 0;
             }
 
+            if (curenv) inc_tables_in_env(curenv);
             page_increm(page);
             new = (struct page_table *)KADDR(page2pa(page));
             *entry = PADDR(new) | PAGE_PRESENT | PAGE_USER | PAGE_WRITE;

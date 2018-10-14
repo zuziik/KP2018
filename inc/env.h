@@ -79,7 +79,9 @@ struct env {
     envid_t pause;
 
     // LAB 7
-    size_t used_pages;        /* Number of used physical pages */
+    size_t num_alloc;        /* Number of used physical pages allocated by page_alloc in user space */
+    size_t num_tables;       /* Number of pages used for page table tree */
+    size_t num_swap;         /* Number of swapped out pages */
 };
 
 /* Anonymous VMAs are zero-initialized whereas binary VMAs

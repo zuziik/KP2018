@@ -44,6 +44,8 @@
 /* Kthreads lists */
 #define KTHREADS (KTHREADS_BOT - ROUNDUP(MAX_KTHREADS * sizeof(struct kthread), PAGE_SIZE))
 
+#define DISKSLOTS (KTHREADS - PDPT_SPAN)
+
 /* User address space limit. */
 #ifdef __ASSEMBLER__
 #define USER_LIM 0x800000000000
@@ -68,3 +70,4 @@
 /* Used for temporary page mappings. Typed as a void pointer as a convenience.
  */
 #define UTEMP ((void *)PAGE_SIZE)
+

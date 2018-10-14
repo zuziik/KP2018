@@ -1,48 +1,177 @@
 #include <kern/swap.h>
-#include <kern/pmap.h>
+
 
 // struct page_fault *page_faults = NULL;
 struct page_info *page_fault_head = NULL;
 struct page_info *page_fault_tail = NULL;
 
-void swap_alloc_update_counters(int huge) {
-	if (huge)
-		dec_freepages(SMALL_PAGES_IN_HUGE);
-	else
-		dec_freepages(1);
 
-	// Locks?
-	if (curenv != NULL) {
-		// update curenv counter of used physical pages
-		if (huge)
-			curenv->used_pages -= SMALL_PAGES_IN_HUGE;
-		else
-			curenv->used_pages -= 1;
+/**
+* Initialization of swapping functionality. Prepares control
+* datastructure to keep track on changes on the disk.
+*/
+void swap_init() {
+
+	// Allocating memory for disk_slots data structure
+	// (information about free/used sectors on disk)
+
+    uintptr_t vi;
+	uintptr_t va_start;
+    uintptr_t va_end;
+    struct page_info *p;
+    uint32_t size;
+    int i;
+
+	nswapslots = ide_num_sectors() / (PAGE_SIZE/SECTSIZE);
+	cprintf("[SWAP INIT] We can fit %d pages on swap disk\n", nswapslots);
+
+	size = sizeof(struct swap_slot)*nswapslots;
+
+    p = NULL;
+
+    va_start = (uintptr_t) DISKSLOTS;
+    va_end = ROUNDUP(va_start + size, PAGE_SIZE);
+
+
+    for (vi = va_start; vi < va_end; vi += PAGE_SIZE) {
+        if (!(p = page_alloc(ALLOC_ZERO)))
+            panic("Couldn't allocate memory for swap disk structure");
+        page_insert(kern_pml4, p, (void *)vi, PAGE_WRITE | PAGE_USER);
+    }
+
+	swap_slots = (struct swap_slot *) va_start;
+
+	// Initializing the data structure
+	for (i = 0; i < nswapslots; i++) {
+        swap_slots[i].is_used = 0;
+        // swap_slots[i].ptes = NULL;
+        swap_slots[i].next = (i == nswapslots - 1) ? NULL : &swap_slots[i+1];
+        swap_slots[i].prev = (i == 0) ? NULL : &swap_slots[i-1];
 	}
+
+	// Marking all disk slots as free, thus putting them in the free slots list
+	free_swap_slots = swap_slots;
+	swapped_pages = NULL;
 }
 
-void swap_free_update_counters(int huge) {
-	if (huge)
-		inc_freepages(SMALL_PAGES_IN_HUGE);
-	else
-		inc_freepages(1);
+/** 
+* Removes head from the free_disk_slots list
+* Returns disk slot or NULL
+*/
+struct swap_slot *alloc_swap_slot() {
+	if (free_swap_slots == NULL)
+		return NULL;
 
-	// Locks?
-	if (curenv != NULL) {
-		// update curenv counter of used physical pages
-		if (huge)
-			curenv->used_pages += SMALL_PAGES_IN_HUGE;
-		else
-			curenv->used_pages += 1;
-	}
-}            
+	struct swap_slot *slot = free_swap_slots;
+	free_swap_slots = free_swap_slots->next;
+	free_swap_slots->prev = NULL;
+	slot->next = NULL;
+
+	return slot;
+}
+
+/**
+* Marks the swap space slot as free, i.e. adds it to the free list
+*/
+void free_swap_slot(struct swap_slot *slot) {
+	slot->next = free_swap_slots;
+	slot->prev = NULL;
+	free_swap_slots->prev = slot;
+	free_swap_slots = slot;
+}
+
+/**
+* Swaps out the physical page on a disk.
+* Returns 1 (success) / 0 (fail)
+*/
+int swap_out(struct page_info *p) {
+	// 1.Copy page on a disk
+	// Blocking now
+	// Maybe we don't want any local variables
+	// Always a small page
+	int i;
+	struct swap_slot *slot;
+
+	slot = alloc_swap_slot();
+
+	// No swap space available, return fail
+	if (slot == NULL)
+		return 0;
+
+	ide_start_write(slot2sector(slot), SECTORS_PER_PAGE);
+	for (i = 0; i < SECTORS_PER_PAGE; i++)
+		while (!ide_is_ready());
+		ide_write_sector((char *) KADDR(page2pa(p)) + i*SECTSIZE);
+
+	// 2. Remove PTE list from page_info and map it to swap structure
+	// slot->ptes = p->ptes;
+
+	// 3. Zero-out all entries pointing to this physical page and
+	// decrease reference count on the page
+	// + set SWAPPED OUT flag
+
+	// 4. Update num_swap field of each affected env (number of swapped out
+	// pages, used by OOM) using inc_swapped_in_env()
+
+	// 5. Flush TLB caches. Currently there is a problem - it only flushes
+	// pages of the current environment. Need to fix this!
+
+	// 6. Free the physical page
+	page_free(p);
+
+	// 7. Update num_alloc field for each affected env (dec_alloc_in_env())
+
+	// 8. Add the slot to swapped_pages list (this will be used for faster looking for
+	// a swapped page from page fault handler)
+
+	return 1;
+}
+
+/**
+* Allocates a new physical page and copies it back from disk.
+* + There will be another function that calls this one, which
+* first walks the swap_slots array to search for the slot which
+* contains the swapped out VA+env / PTE.
+* Returns 1 (success) / 0 (fail)
+*/
+int swap_in(struct swap_slot *slot) {
+
+	int i;
+
+	// 1. Allocate a page
+	struct page_info *p = page_alloc(0);
+	if (p == NULL)
+		return 0;
+
+	// 2. Copy data back from the disk
+	ide_start_read(slot2sector(slot), SECTORS_PER_PAGE);
+	for (i = 0; i < SECTORS_PER_PAGE; i++)
+		while (!ide_is_ready());
+		ide_read_sector((char *) KADDR(page2pa(p)) + i*SECTSIZE);
+
+	// 3. Free the swap space
+	free_swap_slot(slot);
+
+	// 4. Walk the slot->ptes linked list and map the page everywhere
+	// it was mapped before + increase the refcount with each mapping
+
+	// 5. Update num_swap field of each affected env (number of swapped out
+	// pages, used by OOM) using dec_swapped_in_env()
+
+	// 6. Update num_alloc field for each affected env (inc_alloc_in_env())
+
+	// 7. Remove the slot from swapped_pages list
+
+	return 1;
+}
+       
 
 /**
 * Initializes freepages counter. Called during boot.
 */
-void set_freepages(size_t num) {
+void set_nfreepages(size_t num) {
 	// TODO locking?
-	freepages = num;
+	nfreepages = num;
 }
 
 /**
@@ -53,35 +182,68 @@ void set_freepages(size_t num) {
 */
 int available_freepages(size_t num) {
 	// TODO locking?
-	return freepages >= num;
+	return nfreepages >= num;
 }
 
 /**
 * Increments the counter of the total number of available
 * free pages on the system by num.
 * Num is 1 for small pages and SMALL_PAGES_IN_HUGE for
-* huge pages (we might consider removing the huge page
-* support).
+* huge pages.
 * This function is called from page_free().
 */
-void inc_freepages(size_t num) {
+void inc_nfreepages(int huge) {
 	// TODO locking?
-	freepages += num;
+	if (huge)
+		nfreepages += SMALL_PAGES_IN_HUGE;
+	else
+		nfreepages++;
 }
 
 /**
 * Decrements the counter of the total number of available
 * free pages on the system by num.
 * Num is 1 for small pages and SMALL_PAGES_IN_HUGE for
-* huge pages (we might consider removing the huge page
-* support).
+* huge pages.
 * This function is called from page_alloc().
 */
-void dec_freepages(size_t num) {
+void dec_nfreepages(int huge) {
 	// TODO locking?
-	freepages -= num;
+	if (huge)
+		nfreepages -= SMALL_PAGES_IN_HUGE;
+	else
+		nfreepages--;
 }
 
+//--------------------------------------------------------
+// Counters for environments. They are separate functions
+// now because I think we need locking (but maybe we can
+// remove them if not)
+
+void inc_allocated_in_env(struct env *e) {
+	e->num_alloc++;
+}
+
+void dec_allocated_in_env(struct env *e) {
+	e->num_alloc--;
+}
+
+
+void inc_swapped_in_env(struct env *e) {
+	e->num_swap++;
+}
+
+void dec_swapped_in_env(struct env *e) {
+	e->num_swap--;
+}
+
+void inc_tables_in_env(struct env *e) {
+	e->num_tables++;
+}
+
+void dec_tables_in_env(struct env *e) {
+	e->num_tables--;
+}
 
 /**
 * Inserts the faulting VA at the end of a faulting
@@ -93,30 +255,28 @@ void dec_freepages(size_t num) {
 */
 void page_fault_queue_insert(uintptr_t fault_va) {
 	struct vma *vma;
+	// Question - will there be any restrictions on the list size?
 	struct page_info *page;
+	// We don't want to record ALL page faults that ever happened.
 	physaddr_t *pt_entry = NULL;
-
+	// Question - should we also call this after COW?
+	// Do we want to support huge pages as well? Now it's only for
 	page = page_lookup(curenv->env_pml4, (void *) fault_va, &pt_entry);
-
+	// small pages.
 	// Corner cases: empty(-ish) list
 	if (page_fault_head == NULL) {
 		page_fault_head = page;
 	}
-
 	if (page_fault_tail == NULL) {
 		page_fault_tail = page;
 	}
-
 	// COW - page is already in list - corner cases
 	// if (page == page_fault_head) {
 	// 	if (page == page_fault_tail) {
-
 	// 	}
 	// }
-
 	// TODO: COW - remap already existing entry
 	// so reconnect list
-
 	// Add to end
 	page_fault_tail->fault_prev = page;
 	page->fault_next = page_fault_tail;
@@ -134,22 +294,20 @@ void page_fault_queue_insert(uintptr_t fault_va) {
 int page_reclaim(size_t num) {
     // First, try to swap num pages.
 	// Num - because we might want to support small/huge pages.
-    if (! swap_pages(num))
+    if (! swap_pages())
     	// If not successful, go for OOM killing.
     	return oom_kill_process();
     return 1;
 }
 
 /**
-* Swaps the first num pages from the LRU list (FIFO/CLOCK),
-* either to the cache, or on the disk.
+* Swaps out pages from the LRU list (FIFO/CLOCK) on the disk, until
+* we have at least FREEPAGE_THRESHOLD pages available.
+* Uses swap_out() function for each of the swapped pages.
 * Called both from direct reclaiming and periodic reclaiming function.
 * Returns 1 (success) / 0 (fail)
 */
-int swap_pages(size_t num) {
-	// !!! Are we going to distinguish between small/huge pages?
-	// Or are we going to always swap-out 512 pages, so that we
-	// always have at least one huge page ready?
+int swap_pages() {
 	return 0;
 }
 
@@ -164,19 +322,23 @@ int oom_kill_process() {
     // stored there. Choose the process with the highest score.
 	process_to_kill = -1;
 
-    for (oom_i = 0; oom_i < NENV; oom_i++) {
+    for (counter = 0; counter < NENV; counter++) {
     	// TODO fix - compute RSS score using env.used_pages
     	// I don't get the formula - what is RSS there?
-    	current_rss = envs[oom_i].used_pages;
+    	current_rss = (envs[counter].num_alloc + envs[counter].num_swap + envs[counter].num_tables)
+    	 / PAGE_SIZE + get_npages()/1000;
+    	cprintf("OOM process %llx, alloc %d, score %d\n", envs[counter].env_id, envs[counter].num_alloc, current_rss);
     	if (current_rss > highest_rss) {
     		highest_rss = current_rss;
-    		process_to_kill = envs[oom_i].env_id;
+    		process_to_kill = envs[counter].env_id;
     	}
     }
 
     if (process_to_kill == -1) {
     	panic("OOM killer - No processes to kill!");
     }
+
+    cprintf("OOM wants to kill %llx\n", process_to_kill);
 
     // Kill the process = Send an interrupt to the core the process is
     // running at. The cpu will then destroy the process.
@@ -201,16 +363,14 @@ int oom_kill_process() {
 /**
 * KERNEL THREAD
 * Periodically checks whether the number of free pages is above a given threshold.
-* If not, swaps pages .
-* It uses global variables without locking because only one instance of this
+* If not, swaps enough pages to have FREEPAGE_THRESHOLD free pages.
+* Only one instance of this
 * kernel thread is running at a time.
 */
 void kthread_swap() {
-	// TODO fix the constants. We need something like THRESHOLD instead of 555
-	// and them compute the number using another threshold instead of 333.
     while (1) {
         if (! available_freepages(FREEPAGE_THRESHOLD))
-        	swap_pages(333);
+        	swap_pages();
         kthread_interrupt();
     }
 }

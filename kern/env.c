@@ -19,6 +19,7 @@
 
 #include <kern/vma.h>
 #include <kern/lock.h>
+#include <kern/swap.h>
 
 struct env *envs = NULL;            /* All environments */
 static struct env *env_free_list;   /* Free environment list */            
@@ -152,6 +153,7 @@ static int env_setup_vm(struct env *e)
     /* LAB 3: your code here. */
     page_increm(p);
     e->env_pml4 = (struct page_table *)KADDR(page2pa(p));
+    e->num_tables++;
 
     // The initial VA below UTOP is empty
     for (i = 0; i < PML4_INDEX(USER_TOP); i++) {
@@ -245,6 +247,10 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     e->timeslice = MAXTIMESLICE;
     e->prev_time = 0;
     e->pause = -1;
+
+    e->num_alloc = 0;
+    e->num_swap = 0;
+    e->num_tables = 0;
 
     /*
      * Clear out all the saved register state, to prevent the register values of
@@ -458,7 +464,7 @@ void env_create(uint8_t *binary, enum env_type type)
     cprintf("[ENV CREATE] end\n");
 }
 
-void env_free_page_tables(struct page_table *page_table, size_t depth)
+void env_free_page_tables(struct env *e, struct page_table *page_table, size_t depth)
 {
     struct page_table *child;
     physaddr_t *entry;
@@ -479,10 +485,11 @@ void env_free_page_tables(struct page_table *page_table, size_t depth)
         if (depth) {
             /* Free the page table. */
             child = KADDR(PAGE_ADDR(*entry));
-            env_free_page_tables(child, depth - 1);
+            env_free_page_tables(e, child, depth - 1);
         } else {
             /* Free the page. */
             page_decref(pa2page(PAGE_ADDR(*entry)));
+            dec_allocated_in_env(e);
             *entry = 0;
         }
     }
@@ -509,7 +516,7 @@ void env_free(struct env *e)
     /* Free the page tables. */
     static_assert(USER_TOP % PAGE_SIZE == 0);
 
-    env_free_page_tables(e->env_pml4, 3);
+    env_free_page_tables(e, e->env_pml4, 3);
     e->env_pml4 = NULL;
 
     /* Return the environment to the free list */

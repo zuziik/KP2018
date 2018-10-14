@@ -16,6 +16,7 @@
 
 #include <kern/vma.h>
 #include <kern/spinlock.h>
+#include <kern/swap.h>
 
 extern void syscall64(void);
 
@@ -341,6 +342,7 @@ int copy_pml4(struct env *old, struct env *new) {
         if (alloc_table(pml4_old, pml4_new, s) < 0) {
             return -1;
         }
+        inc_tables_in_env(new);
 
         // Loop through pdp entries
         pdpt_old = (struct page_table *) KADDR(PAGE_ADDR(pml4_old->entries[s]));
@@ -352,6 +354,7 @@ int copy_pml4(struct env *old, struct env *new) {
             if (alloc_table(pdpt_old, pdpt_new, t) < 0) {
                 return -1;
             }
+            inc_tables_in_env(new);
 
             // Loop through pd entries
             pgdir_old = (struct page_table *) KADDR(PAGE_ADDR(pdpt_old->entries[t]));
@@ -373,6 +376,7 @@ int copy_pml4(struct env *old, struct env *new) {
                 if (alloc_table(pgdir_old, pgdir_new, u) < 0) {
                     return -1;
                 }
+                inc_tables_in_env(new);
 
                 // Loop through page table
                 pt_old = (struct page_table *) KADDR(PAGE_ADDR(pgdir_old->entries[u]));
