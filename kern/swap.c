@@ -420,36 +420,66 @@ void dec_tables_in_env(struct env *e) {
 * but only after a new page is allocated (i.e. not
 * if the page fault was a permission issue).
 * Expects fault_va to be aligned.
+* Clock will be enforced in swap_pages()
 */
 void page_fault_queue_insert(uintptr_t fault_va) {
 	struct vma *vma;
-	// Question - will there be any restrictions on the list size?
 	struct page_info *page;
-	// We don't want to record ALL page faults that ever happened.
 	physaddr_t *pt_entry = NULL;
-	// Question - should we also call this after COW?
-	// Do we want to support huge pages as well? Now it's only for
 	page = page_lookup(curenv->env_pml4, (void *) fault_va, &pt_entry);
-	// small pages.
-	// Corner cases: empty(-ish) list
-	if (page_fault_head == NULL) {
+
+	// Corner cases: empty list
+	if (page_fault_head == NULL && page_fault_tail == NULL) {
 		page_fault_head = page;
-	}
-	if (page_fault_tail == NULL) {
 		page_fault_tail = page;
 	}
-	// COW - page is already in list - corner cases
-	// if (page == page_fault_head) {
-	// 	if (page == page_fault_tail) {
-	// 	}
-	// }
-	// TODO: COW - remap already existing entry
-	// so reconnect list
-	// Add to end
-	page_fault_tail->fault_prev = page;
-	page->fault_next = page_fault_tail;
+	// COW: page is already in list and list > 1, remove current position
+	else if (page->fault_next != NULL || page->fault_prev != NULL) {
+		// Page is head
+		if (page == page_fault_head) {
+			page_fault_head = page->fault_prev;
+			page_fault_head->fault_next = NULL;
+			page->fault_next = NULL;
+			page->fault_prev = NULL;
+		} 
+		// Page is not tail, remove from middle
+		else if (page != page_fault_tail) {
+			(page->fault_next)->fault_prev = page->fault_prev;
+			(page->fault_prev)->fault_next = page->fault_next;
+			page->fault_next = NULL;
+			page->fault_prev = NULL;
+		}
+	}
+
+	// Append to the back
+	if (page != page_fault_tail) {
+		page_fault_tail->fault_prev = page;
+		page->fault_next = page_fault_tail;
+		page->fault_prev = NULL;
+		page_fault_tail = page;
+	}
+}
+
+// Pop the head of the page fault list
+// TODO: implement CLOCK
+struct page_info *page_fault_pop_head() {
+	struct page_info *page;
+	if (page_fault_head == NULL) {
+		return NULL;
+	}
+	// Pop head and update
+	page = page_fault_head;
+	page_fault_head = page_fault_head->fault_prev;
+	// Check corner cases: empty list
+	if (page_fault_head != NULL) {
+		page_fault_head->fault_next = NULL;
+	} else {
+		// If head is NULL, tail is also NULL
+		page_fault_tail = NULL;
+	}
+	page->fault_next = NULL;
 	page->fault_prev = NULL;
-	page_fault_tail = page;
+	return page;
 }
 
 /**
@@ -476,7 +506,21 @@ int page_reclaim(size_t num) {
 * Returns 1 (success) / 0 (fail)
 */
 int swap_pages() {
-	return 0;
+	return 0; // remove this when everything works
+	int to_free = FREEPAGE_THRESHOLD + FREEPAGE_OVERTHRESHOLD - nfreepages;
+	int i;
+	struct page_info *page;
+	// Pop to_free times and swap out
+	for (i = 0; i < to_free; i++) {
+		page = page_fault_pop_head();
+		if (page == NULL) {
+			return 0;
+		}
+		if (!swap_out(page)) {
+			return 0;
+		}
+	}
+	return 1;
 }
 
 /**

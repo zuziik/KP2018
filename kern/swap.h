@@ -16,10 +16,10 @@ struct swap_slot *free_swap_slots;		/* Linked list of free swap slots */
 
 // Struct(s) used to save faulting page faults
 // extern struct page_fault *page_faults;
-struct page_fault {
-	physaddr_t page_addr;
-	physaddr_t pte_addr;
-};
+// struct page_fault {
+// 	physaddr_t page_addr;
+// 	physaddr_t pte_addr;
+// };
 
 // For each PAGE_SIZE/SECTSIZE sectors on disk (aligned)
 struct swap_slot {
@@ -46,8 +46,8 @@ struct mapped_va {
 };
 
 
-// TODO change the constant
-#define FREEPAGE_THRESHOLD	512
+#define FREEPAGE_THRESHOLD	512				// When does memory pressure start
+#define FREEPAGE_OVERTHRESHOLD 512			// On memory pressure: free x beneath threshold
 #define SECTORS_PER_PAGE PAGE_SIZE/SECTSIZE
 
 void swap_init();
