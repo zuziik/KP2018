@@ -16,18 +16,21 @@ struct swap_slot *free_swap_slots;		/* Linked list of free swap slots */
 
 uint32_t nswapped;						/* Total number of currently allocated swapped structures,
 										can change dynamically on-demand */
+uint64_t npages_swapped;				/* Current number of pages allocated for the swapped structures */
 struct swapped *swapped;				/* Array of all allocated swapped structures */
 struct swapped *free_swapped;			/* Linked list of allocated but unused swapped structures*/
 
 uint32_t nenvmappings;					/* Total number of currently allocated env_mapping structures,
 										can change dynamically on-demand */
+uint64_t npages_env_mapping;			/* Current number of pages allocated for the env_mapping structures */
 struct env_mapping *env_mappings;		/* Array of all allocated env_mapping structures */
-struct env_mapping *free_env_mappings;	/* Linked list of allocated but unused swapped structures*/
+struct env_mapping *free_env_mappings;	/* Linked list of allocated but unused env_mapping structures*/
 
 uint32_t nmappings;						/* Total number of currently allocated mapping structures,
 										can change dynamically on-demand */
+uint64_t npages_mapping;				/* Current number of pages allocated for the mapping structures */
 struct mapping *mappings;				/* Array of all allocated mapping structures */
-struct mapping *free_mappings;			/* Linked list of allocated but unused swapped structures*/
+struct mapping *free_mappings;			/* Linked list of allocated but unused mapping structures*/
 
 
 // Struct(s) used to save faulting page faults

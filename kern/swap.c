@@ -13,8 +13,6 @@ struct page_info *page_fault_tail = NULL;
  */
 void swap_init() {
 
-	// Allocating memory for disk_slots data structure
-	// (information about free/used sectors on disk)
 
     uintptr_t vi;
 	uintptr_t va_start;
@@ -23,6 +21,11 @@ void swap_init() {
     uint32_t size;
     int i;
 
+    //*********************************************************
+
+	// Allocating memory for swap slots datastructure
+	// (information about free/used sectors on disk)
+
 	nswapslots = ide_num_sectors() / (PAGE_SIZE/SECTSIZE);
 	cprintf("[SWAP INIT] We can fit %d pages on swap disk\n", nswapslots);
 
@@ -30,28 +33,108 @@ void swap_init() {
 
     p = NULL;
 
-    va_start = (uintptr_t) DISKSLOTS;
+    va_start = (uintptr_t) SWAPSLOTS;
     va_end = ROUNDUP(va_start + size, PAGE_SIZE);
 
 
     for (vi = va_start; vi < va_end; vi += PAGE_SIZE) {
         if (!(p = page_alloc(ALLOC_ZERO)))
             panic("Couldn't allocate memory for swap disk structure");
-        page_insert(kern_pml4, p, (void *)vi, PAGE_WRITE | PAGE_USER);
+        // TODO PAGE_NO_EXEC? (I removed PAGE_USER)
+        page_insert(kern_pml4, p, (void *)vi, PAGE_WRITE);
     }
 
 	swap_slots = (struct swap_slot *) va_start;
 
 	// Initializing the data structure
 	for (i = 0; i < nswapslots; i++) {
-        swap_slots[i].is_used = 0;
-        swap_slots[i].reverse_mapping = NULL;
         swap_slots[i].next = (i == nswapslots - 1) ? NULL : &swap_slots[i+1];
         swap_slots[i].prev = (i == 0) ? NULL : &swap_slots[i-1];
 	}
 
-	// Marking all disk slots as free, thus putting them in the free slots list
+	// Marking all swap slots as free, thus putting them in the free slots list
 	free_swap_slots = swap_slots;
+
+	//*********************************************************
+
+	// Allocating memory for a pool of allocated swapped structures
+	// (to be used to keep track of swapped out pages)
+
+	va_start = (uintptr_t) POOL_SWAPPED;
+
+	p = page_alloc(ALLOC_ZERO);
+	if (p == NULL)
+		panic("Couldn't allocate memory for swapped pool in swap_init()");
+
+	page_insert(kern_pml4, p, (void *) va_start, PAGE_WRITE);
+
+	npages_swapped = 1;
+	nswapped = PAGE_SIZE / sizeof(struct swapped);
+	cprintf("[SWAP] number of swapped structures: %d\n", nswapped);
+
+	swapped = (struct swapped *) va_start;
+
+	// Initializing the data structure (other fields are left 0)
+	for (i = 0; i < nswapped - 1; i++) {
+        swapped[i].next = &swapped[i+1];
+	}
+
+	// Marking all structs as free, thus putting them in the free list
+	free_swapped = swapped;
+
+	//*********************************************************
+
+	// Allocating memory for a pool of allocated mapping structures
+	// (to be used to keep track of reverse mappings PA->VA)
+
+	va_start = (uintptr_t) POOL_MAPPING;
+
+	p = page_alloc(ALLOC_ZERO);
+	if (p == NULL)
+		panic("Couldn't allocate memory for mapping pool in swap_init()");
+
+	page_insert(kern_pml4, p, (void *) va_start, PAGE_WRITE);
+
+	npages_mapping = 1;
+	nmappings = PAGE_SIZE / sizeof(struct mapping);
+	cprintf("[SWAP] number of mapping structures: %d\n", nmappings);
+
+	mappings = (struct mapping *) va_start;
+
+	// Initializing the data structure (other fields are left 0)
+	for (i = 0; i < nmappings - 1; i++) {
+        mappings[i].next = &mappings[i+1];
+	}
+
+	// Marking all structs as free, thus putting them in the free list
+	free_mappings = mappings;
+
+	//*********************************************************
+
+	// Allocating memory for a pool of allocated env_mapping structures
+	// (to be used to keep track of reverse mappings ENV,PA->va)
+
+	va_start = (uintptr_t) POOL_ENV_MAPPING;
+
+	p = page_alloc(ALLOC_ZERO);
+	if (p == NULL)
+		panic("Couldn't allocate memory for env_mapping pool in swap_init()");
+
+	page_insert(kern_pml4, p, (void *) va_start, PAGE_WRITE);
+
+	npages_env_mapping = 1;
+	nenvmappings = PAGE_SIZE / sizeof(struct env_mapping);
+	cprintf("[SWAP] number of env_mapping structures: %d\n", nenvmappings);
+
+	env_mappings = (struct env_mapping *) va_start;
+
+	// Initializing the data structure (other fields are left 0)
+	for (i = 0; i < nenvmappings - 1; i++) {
+        env_mappings[i].next = &env_mappings[i+1];
+	}
+
+	// Marking all structs as free, thus putting them in the free list
+	free_env_mappings = env_mappings;
 }
 
 //-----------------------------------------------------------------------------
@@ -90,18 +173,53 @@ void free_swap_slot(struct swap_slot *slot) {
 //-----------------------------------------------------------------------------
 
 /*
- * Removes head from the free_swapped list
- * Returns swapped struct or NULL
+ * Removes head from the free_swapped list, returns swapped struct.
+ * If there are no more preallocated structures,
+ * allocates another page and of the structs and adds them into the pool.
  * Panics if we can't allocate any new struct
  */
 struct swapped *alloc_swapped_struct() {
-	return NULL;
+	int i;
+	uint64_t old_nswapped;
+	uintptr_t va_start;
+
+	if (free_swapped == NULL) {
+		if (npages_swapped == MAX_POOL_SIZE) {
+			panic("Can't allocate any more swapped structs - pool reached max size");
+		}
+		struct page_info *p = page_alloc(ALLOC_ZERO);
+		if (p == NULL) {
+			panic("Can't allocate any more swapped structs - no pages available");
+		}
+
+		va_start = (uintptr_t) POOL_SWAPPED + npages_swapped*PAGE_SIZE;
+		page_insert(kern_pml4, p, (void *) va_start, PAGE_WRITE);
+
+		npages_swapped++;
+
+		old_nswapped = nswapped;
+		nswapped = (PAGE_SIZE*npages_swapped)/sizeof(struct swapped);
+
+		for (i = old_nswapped; i < nswapped - 1; i++) {
+			swapped[i].next = &swapped[i+1];
+		}
+
+		free_swapped = &swapped[old_nswapped];
+	}
+
+	struct swapped *swapped = free_swapped;
+	free_swapped = free_swapped->next;
+	return swapped;
 }
 
 /*
  * Marks the swapped struct as free, i.e. adds it to the free list
  */
 void free_swapped_struct(struct swapped *swapped) {
+	swapped->va = NULL;
+	swapped->slot = NULL;
+	swapped->next = free_swapped;
+	free_swapped = swapped;
 }
 
 //-----------------------------------------------------------------------------
@@ -109,18 +227,53 @@ void free_swapped_struct(struct swapped *swapped) {
 //-----------------------------------------------------------------------------
 
 /*
- * Removes head from the free_mappings list
- * Returns mapping struct or NULL
+ * Removes head from the free_mappings list, returns mapping struct.
+ * If there are no more preallocated structures,
+ * allocates another page and of the structs and adds them into the pool.
  * Panics if we can't allocate any new struct
  */
 struct mapping *alloc_mapping_struct() {
-	return NULL;
+	int i;
+	uint64_t old_nmappings;
+	uintptr_t va_start;
+
+	if (free_mappings == NULL) {
+		if (npages_mapping == MAX_POOL_SIZE) {
+			panic("Can't allocate any more mapping structs - pool reached max size");
+		}
+		struct page_info *p = page_alloc(ALLOC_ZERO);
+		if (p == NULL) {
+			panic("Can't allocate any more mapping structs - no pages available");
+		}
+
+		va_start = (uintptr_t) POOL_MAPPING + npages_mapping*PAGE_SIZE;
+		page_insert(kern_pml4, p, (void *) va_start, PAGE_WRITE);
+
+		npages_mapping++;
+
+		old_nmappings = nmappings;
+		nmappings = (PAGE_SIZE*npages_mapping)/sizeof(struct mapping);
+
+		for (i = old_nmappings; i < nmappings - 1; i++) {
+			mappings[i].next = &mappings[i+1];
+		}
+
+		free_mappings = &mappings[old_nmappings];
+	}
+
+	struct mapping *mapping = free_mappings;
+	free_mappings = free_mappings->next;
+	return mapping;
 }
 
 /*
  * Marks the mapping struct as free, i.e. adds it to the free list
  */
 void free_mapping_struct(struct mapping *mapping) {
+	mapping->va = NULL;
+	mapping->perm = 0;
+	mapping->next = free_mappings;
+	free_mappings = mapping;
 }
 
 //-----------------------------------------------------------------------------
@@ -128,18 +281,53 @@ void free_mapping_struct(struct mapping *mapping) {
 //-----------------------------------------------------------------------------
 
 /*
- * Removes head from the free_env_mappings list
- * Panics if we can't allocate any new struct
- * Returns env_mapping struct or NULL
+ * Removes head from the free_env_mappings list, returns env_mapping struct.
+ * If there are no more preallocated structures,
+ * allocates another page and of the structs and adds them into the pool.
+ * Panics if we can't allocate any new struct (reached the max pool size)
  */
 struct env_mapping *alloc_env_mapping_struct() {
-	return NULL;
+	int i;
+	uint64_t old_nenvmappings;
+	uintptr_t va_start;
+
+	if (free_env_mappings == NULL) {
+		if (npages_env_mapping == MAX_POOL_SIZE) {
+			panic("Can't allocate any more env_mapping structs - pool reached max size");
+		}
+		struct page_info *p = page_alloc(ALLOC_ZERO);
+		if (p == NULL) {
+			panic("Can't allocate any more env_mapping structs - no pages available");
+		}
+
+		va_start = (uintptr_t) POOL_ENV_MAPPING + npages_env_mapping*PAGE_SIZE;
+		page_insert(kern_pml4, p, (void *) va_start, PAGE_WRITE);
+
+		npages_env_mapping++;
+
+		old_nenvmappings = nenvmappings;
+		nenvmappings = (PAGE_SIZE*npages_env_mapping)/sizeof(struct env_mapping);
+
+		for (i = old_nenvmappings; i < nenvmappings - 1; i++) {
+			env_mappings[i].next = &env_mappings[i+1];
+		}
+
+		free_env_mappings = &env_mappings[old_nenvmappings];
+	}
+
+	struct env_mapping *env_mapping = free_env_mappings;
+	free_env_mappings = free_env_mappings->next;
+	return env_mapping;
 }
 
 /*
  * Marks the env_mapping struct as free, i.e. adds it to the free list
  */
 void free_env_mapping_struct(struct env_mapping *env_mapping) {
+	env_mapping->e = NULL;
+	env_mapping->list = NULL;
+	env_mapping->next = free_env_mappings;
+	free_env_mappings = env_mapping;
 }
 
 //-----------------------------------------------------------------------------

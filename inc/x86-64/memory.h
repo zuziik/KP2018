@@ -44,7 +44,13 @@
 /* Kthreads lists */
 #define KTHREADS (KTHREADS_BOT - ROUNDUP(MAX_KTHREADS * sizeof(struct kthread), PAGE_SIZE))
 
-#define DISKSLOTS (KTHREADS - PDPT_SPAN)
+#define SWAPSLOTS (KTHREADS - PDPT_SPAN)
+
+#define POOL_SWAPPED (SWAPSLOTS - PDPT_SPAN)
+#define POOL_MAPPING (POOL_SWAPPED - PDPT_SPAN)
+#define POOL_ENV_MAPPING (POOL_MAPPING - PDPT_SPAN)
+
+#define MAX_POOL_SIZE (PDPT_SPAN/PAGE_SIZE)
 
 /* User address space limit. */
 #ifdef __ASSEMBLER__
