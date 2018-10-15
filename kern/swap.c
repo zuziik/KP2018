@@ -1,5 +1,6 @@
 #include <kern/swap.h>
 #include <kern/vma.h>
+#include <kern/pmap.h>
 
 
 // struct page_fault *page_faults = NULL;
@@ -232,8 +233,9 @@ int swap_in(struct swap_slot *slot) {
 */
 void remove_reverse_mapping(struct env *e, void *va, struct page_info *page) {
 
-	if (page == NULL)
-		page = pa2page(page_walk(e->env_pml4, va, 0));
+	// TODO ZUZANA
+	// if (page == NULL)
+	// 	page = pa2page(page_walk(e->env_pml4, va, 0));
 
 	if (page == NULL)
 		return;

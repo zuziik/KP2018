@@ -506,7 +506,7 @@ struct page_info *page_alloc(int alloc_flags)
     // This only works with small pages - if we want huge pages,
     // it won't be so easy -- discussion needed
     if (!available_freepages(1)) {
-        page_reclaim(1);
+        page_reclaim();
     }
     
     // If out of memory, return NULL

@@ -1,4 +1,5 @@
 #include <kern/vma.h>
+#include <kern/swap.h>
 
 /**
 * Removes the specified VMA from the VMAs list
