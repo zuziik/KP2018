@@ -80,8 +80,6 @@ static void *boot_alloc(uint32_t n)
         panic("Out of virtual memory in boot_alloc\n");
     }
 
-    cprintf("result:       %llx | nextfree: %llx\n", result, nextfree);
-
     return result;
 }
 
@@ -165,23 +163,9 @@ void mem_init(struct boot_info *boot_info)
     kthreads = boot_alloc(sizeof(struct kthread) * MAX_KTHREADS);
 
     // kthreads with id -1 are not used / not allocated
-    cprintf("[start loop]\n");
     for (i = 0; i < MAX_KTHREADS; i++) {
         kthreads[i].kt_id = -1;
         kthreads[i].kt_status = ENV_FREE;
-    }
-
-    //----------------------------------------------------------------------------------------
-    // Alloc memory for kthread_frame for each kthread
-    // Use page guards to protect from overflowing
-    //----------------------------------------------------------------------------------------
-
-    cprintf("MAX_KTHREADS: %d\n", MAX_KTHREADS);
-    cprintf("NENVS: %d\n", NENV);
-
-    for (i = 0; i < MAX_KTHREADS; i++) {
-        kthreads[i].top = boot_alloc(KTHREAD_STACK_SIZE);
-        kthreads[i].start_rbp = (int64_t) kthreads[i].top;
     }
 
     /*********************************************************************
@@ -190,21 +174,19 @@ void mem_init(struct boot_info *boot_info)
      */
     envs = boot_alloc(sizeof(struct env) * NENV);
 
-    cprintf("IO_PHYS_MEM:  %llx\n", KERNEL_VMA + IO_PHYS_MEM);
-    cprintf("EXT_PHYS_MEM: %llx\n", KERNEL_VMA + EXT_PHYS_MEM);
-    cprintf("BEFORE\n");
     for (i = 0; i < NENV; i++) {
-        cprintf("envs[i]: %llx | &envs[i]: %llx\n", envs, &envs[i]);
-        cprintf("envs+0: %llx | envs[0]: %llx\n", envs+0, envs[0]);
-        cprintf("envs[i].vma_array: %llx\n", envs[i].vma_array);
-        cprintf("&envs[i]->vma_array: %llx\n", (&envs[i])->vma_array);
-        (&envs[i])->vma_array = NULL;
-        cprintf("i: %d\n", i);
-        // vma_list = boot_alloc(sizeof(struct vma)*MAX_VMAS);
-        cprintf("i: %d\n", i);
-        // envs[i].vma_array = vma_list;
+        vma_list = boot_alloc(sizeof(struct vma)*MAX_VMAS);
+        envs[i].vma_array = vma_list;
     }
-    cprintf("AFTER\n");
+
+    //----------------------------------------------------------------------------------------
+    // Alloc memory for kthread_frame for each kthread
+    // Use page guards to protect from overflowing
+    //----------------------------------------------------------------------------------------
+    for (i = 0; i < MAX_KTHREADS; i++) {
+        kthreads[i].top = boot_alloc(KTHREAD_STACK_SIZE);
+        kthreads[i].start_rbp = (int64_t) kthreads[i].top;
+    }
 
     /*********************************************************************
      * Alloc page_faults array to save all the page faults in
