@@ -93,8 +93,8 @@ int swap_out(struct page_info *p) {
 	// Always a small page
 	int i;
 	struct swap_slot *slot;
-	struct mapped_va *mapping;
-	int affected_envs[NENV];
+	struct env_va_mapping *env_va_mapping;
+	struct va_mapping *va_mapping;
 
 	lock_swapslot();
 	slot = alloc_swap_slot();
@@ -116,47 +116,25 @@ int swap_out(struct page_info *p) {
 
 	// 3. Zero-out all entries pointing to this physical page and
 	// decrease reference count on the page
-	mapping = slot->reverse_mapping;
-	while (mapping != NULL) {
-		// TODO Problem with invalidating TLB cache, see tlb_invalidate() implementation
-		page_remove(mapping->e->env_pml4, mapping->va);
-		mapping = mapping->next;
-	}
-
-	// 4. Update num_swap field of each affected env (number of swapped out
-	// pages, used by OOM) using inc_swapped_in_env()
-	// 5. Update num_alloc field for each affected env (dec_alloc_in_env())
-
-	for (i = 0; i < NENV; i++) {
-		affected_envs[i] = 0;
-	}
-
-	mapping = slot->reverse_mapping;
-	while (mapping != NULL) {
-		affected_envs[env2i(mapping->e)] = 1;
-		mapping = mapping->next;
-	}
-
-	for (i = 0; i < NENV; i++) {
-		if (affected_envs[i]) {
-			inc_swapped_in_env(&envs[i]);
-			dec_allocated_in_env(&envs[i]);
+	// 4. Add the slot to every VMA swapped_pages list
+	env_va_mapping = slot->reverse_mapping;
+	while (env_va_mapping != NULL) {
+		va_mapping = env_va_mapping->list;
+		while (va_mapping != NULL) {
+			// TODO Problem with invalidating TLB cache, see tlb_invalidate() implementation
+			page_remove(env_va_mapping->e->env_pml4, va_mapping->va);
+			vma_add_swapped_page(env_va_mapping->e, va_mapping->va, slot);
+			va_mapping = va_mapping->next;
 		}
+		env_va_mapping = env_va_mapping->next;
 	}
 
-	// 6. Free the physical page
+	// 5. Free the physical page
 	if (p->pp_ref != 0) {
 		panic("[SWAP_OUT] Didn't remove all the mappings to the swapped out page");
 	}
 	p->pp_ref = 1;
 	page_decref(p);
-
-	// 7. Add the slot to every VMA swapped_pages list
-	mapping = slot->reverse_mapping;
-	while (mapping != NULL) {
-		vma_add_swapped_page(mapping->e, mapping->va, slot);
-		mapping = mapping->next;
-	}
 
 	unlock_swapslot();
 	return 1;
@@ -172,8 +150,8 @@ int swap_out(struct page_info *p) {
 int swap_in(struct swap_slot *slot) {
 
 	int i;
-	struct mapped_va *mapping;
-	int affected_envs[NENV];
+	struct env_va_mapping *env_va_mapping;
+	struct va_mapping *va_mapping;
 
 	// 1. Allocate a page
 	struct page_info *p = page_alloc(0);
@@ -192,41 +170,19 @@ int swap_in(struct swap_slot *slot) {
 
 	// 4. Walk the saved reverse mappings and map the page everywhere
 	// it was mapped before + increase the refcount with each mapping
-	mapping = slot->reverse_mapping;
-	while (mapping != NULL) {
-		page_insert(mapping->e->env_pml4, mapping->va, p, mapping->perm);
-		mapping = mapping->next;
-	}
-
-	// 5. Update num_swap field of each affected env (number of swapped out
-	// pages, used by OOM) using dec_swapped_in_env()
-
-	// 6. Update num_alloc field for each affected env (inc_alloc_in_env())
-	for (i = 0; i < NENV; i++) {
-		affected_envs[i] = 0;
-	}
-
-	mapping = slot->reverse_mapping;
-	while (mapping != NULL) {
-		affected_envs[env2i(mapping->e)] = 1;
-		mapping = mapping->next;
-	}
-
-	for (i = 0; i < NENV; i++) {
-		if (affected_envs[i]) {
-			dec_swapped_in_env(&envs[i]);
-			inc_allocated_in_env(&envs[i]);
+	// 5. Remove the slot from swapped_pages list of each VMA
+	env_va_mapping = slot->reverse_mapping;
+	while (env_va_mapping != NULL) {
+		va_mapping = env_va_mapping->list;
+			while (va_mapping != NULL) {
+			page_insert(env_va_mapping->e->env_pml4, va_mapping->va, p, va_mapping->perm);
+			vma_remove_swapped_page(env_va_mapping->e, va_mapping->va);
+			va_mapping = va_mapping->next;
 		}
+		env_va_mapping = env_va_mapping->next;
 	}
 
-	// 7. Remove the slot from swapped_pages list of each VMA
-	mapping = slot->reverse_mapping;
-	while (mapping != NULL) {
-		vma_remove_swapped_page(mapping->e, mapping->va);
-		mapping = mapping->next;
-	}
-
-	// 8. Correctly set the reverse mappings to the new page
+	// 6. Correctly set the reverse mappings to the new page
 	p->reverse_mapping = slot->reverse_mapping;
 	slot->reverse_mapping = NULL;
 
@@ -246,26 +202,48 @@ void remove_reverse_mapping(struct env *e, void *va, struct page_info *page) {
 	if (page == NULL)
 		return;
 
-	struct mapped_va *curr = page->reverse_mapping;
-	struct mapped_va *prev = page->reverse_mapping;
+	struct va_mapping *curr_va_mapping;	
+	struct va_mapping *prev_va_mapping;	
+	struct env_va_mapping *curr_env_va_mapping = page->reverse_mapping;
+	struct env_va_mapping *prev_env_va_mapping = NULL;
 
-	// First one? Remove head
-	// Is it ok that we just let the removed structure go? No free?
-	if ((curr->va == va) && (curr->e == e)) {
-		page->reverse_mapping = curr->next;
-		return;
+	while ((curr_env_va_mapping != NULL) && (curr_env_va_mapping->e != e)) {
+		prev_env_va_mapping = curr_env_va_mapping;
+		curr_env_va_mapping = curr_env_va_mapping->next;
 	}
 
-	curr = curr->next;
+	// Mapping for env is not there, nothing to remove, return
+	if (curr_env_va_mapping == NULL)
+		return;
 
-	while (curr != NULL) {
-		if ((curr->va == va) && (curr->e == e)) {
-			prev->next = curr->next;
-			return;
-		}
-		prev = curr;
-		curr = curr->next;
-	}	
+	curr_va_mapping = curr_env_va_mapping->list;
+	prev_va_mapping = NULL;
+
+	while ((curr_va_mapping != NULL) && (curr_va_mapping->va != va)) {
+		prev_va_mapping = curr_va_mapping;
+		curr_va_mapping = curr_va_mapping->next;
+	}
+
+	// Mapping for this env and va is not there, nothing to remove, return
+	if (curr_va_mapping == NULL)
+		return;
+
+	// VA is the first in the list
+	if (prev_va_mapping == NULL)
+		curr_env_va_mapping->list = curr_va_mapping->next;
+	else
+		prev_va_mapping->next = curr_va_mapping->next;
+
+	// TODO ZUZANA free(curr_va_mapping)
+
+	// All mappings of the environment were freed, remove the list for the environment
+	if (curr_env_va_mapping->list == NULL) {
+		if (prev_env_va_mapping == NULL)
+			page->reverse_mapping = curr_env_va_mapping->next;
+		else
+			prev_env_va_mapping->next = curr_env_va_mapping->next;
+		// TODO ZUZANA free(curr_env_va_mapping)
+	}
 }
 
 /**
@@ -283,13 +261,32 @@ void env_remove_reverse_mappings(struct env *e) {
 * Adds a reverse mapping to a physical page
 */
 void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int perm) {
-	struct mapped_va mapping;
-	mapping.va = va;
-	mapping.perm = perm;
-	mapping.e = e;
-	mapping.next = page->reverse_mapping;
 
-	page->reverse_mapping = &mapping;
+	// TODO ZUZANA change how it's allocated
+	struct va_mapping new_va_mapping;	
+	// TODO ZUZANA change how to alloc + this one only if needed	
+	struct env_va_mapping new_env_va_mapping;
+
+	struct env_va_mapping *tmp_env_va_mapping;
+
+	new_va_mapping.va = va;
+	new_va_mapping.perm = perm;
+
+	tmp_env_va_mapping = page->reverse_mapping;
+
+	while ((tmp_env_va_mapping->e != e) && (tmp_env_va_mapping != NULL))
+		tmp_env_va_mapping = tmp_env_va_mapping->next;
+
+	// Nothing is mapped for the env yet
+	if (tmp_env_va_mapping == NULL) {
+		tmp_env_va_mapping = &new_env_va_mapping;
+		tmp_env_va_mapping->e = e;
+		tmp_env_va_mapping->next = page->reverse_mapping;
+		page->reverse_mapping = tmp_env_va_mapping;
+	}
+
+	new_va_mapping.next = tmp_env_va_mapping->list;
+	tmp_env_va_mapping->list = &new_va_mapping;
 }
 
 /**
@@ -301,11 +298,9 @@ struct swap_slot *vma_lookup_swapped_page(struct vma *vma, void *va) {
 	while ((swapped != NULL) && (swapped->va != va)) {
 		swapped = swapped->next;
 	}
-
 	if (swapped == NULL) {
 		return NULL;
 	}
-
 	return swapped->slot;
 }
  
@@ -357,6 +352,7 @@ void vma_remove_swapped_page(struct env *e, void *va) {
 
 	panic("swapped_va not in vma list\n");
 }
+
 
 /**
 * Initializes freepages counter. Called during boot.
@@ -411,49 +407,6 @@ void dec_nfreepages(int huge) {
 		nfreepages--;
 	unlock_nfreepages();
 }
-
-//--------------------------------------------------------
-// Counters for environments. They are separate functions
-// now because I think we need locking (but maybe we can
-// remove them if not)
-
-void inc_allocated_in_env(struct env *e) {
-	int lock = env_lock_env();
-	e->num_alloc++;
-	env_unlock_env(lock);
-}
-
-void dec_allocated_in_env(struct env *e) {
-	int lock = env_lock_env();
-	e->num_alloc--;
-	env_unlock_env(lock);
-}
-
-
-void inc_swapped_in_env(struct env *e) {
-	int lock = env_lock_env();
-	e->num_swap++;
-	env_unlock_env(lock);
-}
-
-void dec_swapped_in_env(struct env *e) {
-	int lock = env_lock_env();
-	e->num_swap--;
-	env_unlock_env(lock);
-}
-
-void inc_tables_in_env(struct env *e) {
-	int lock = env_lock_env();
-	e->num_tables++;
-	env_unlock_env(lock);
-}
-
-void dec_tables_in_env(struct env *e) {
-	int lock = env_lock_env();
-	e->num_tables--;
-	env_unlock_env(lock);
-}
-
 
 /**
 * Check if the page is part of the page fault list
@@ -562,6 +515,7 @@ struct page_info *page_fault_pop_head() {
 * Returns 1 (success) / 0 (fail)
 */
 int swap_pages() {
+
 	// Get the amount of pages to free
 	lock_nfreepages();
 	int to_free = FREEPAGE_THRESHOLD + FREEPAGE_OVERTHRESHOLD - nfreepages;
@@ -582,8 +536,99 @@ int swap_pages() {
 		}
 	}
 	swap_unlock_pagealloc(lock);
-
 	return 1;
+}
+
+/**
+* Returns the number of swapped out pages for the specified envuronment.
+* Used by the oom_kill_process() function.
+*/
+uint32_t count_swapped_pages(struct env* e) {
+	struct vma *vma;
+	struct swapped_va *swapped_page;
+	uint32_t num_swap = 0;
+
+   	vma = e->vma;
+
+	while (vma != NULL) {
+		swapped_page = vma->swapped_pages;
+		while (swapped_page != NULL) {
+			num_swap++;
+			swapped_page = swapped_page->next;
+		}
+		vma = vma->next;
+    }
+
+    return num_swap;
+}
+
+/**
+* Returns the number of allocated pages for the specified envuronment.
+* (only mapped pages, not page tables)
+* Used by the oom_kill_process() function.
+*/
+uint32_t count_allocated_pages(struct env* e) {
+	struct env_va_mapping *env_va_mapping;
+	uint32_t num_alloc = 0;
+	int i;
+
+	for (i = 0; i < npages; i++) {
+		env_va_mapping = pages[i].reverse_mapping;
+		while ((env_va_mapping != NULL) && (env_va_mapping->e != e)) {
+			env_va_mapping = env_va_mapping->next;
+		}
+		// This page is used by the environment - increment the counter
+		if (env_va_mapping != NULL)
+			num_alloc++;
+	}
+
+	return num_alloc;
+}
+
+/**
+* Returns the number of physical pages used by the specified envuronment
+* for page table tree.
+* Used by the oom_kill_process() function.
+*/
+uint32_t count_table_pages(struct env* e) {
+	uint32_t num_tables = 0;
+	int s, t, u;
+	struct page_table *pdp, *pd, *pt;
+	struct page_table *pml4 = e->env_pml4;
+	physaddr_t entry;
+
+	if (pml4 == NULL)
+		return num_tables;
+
+	num_tables++;
+
+	for (s = 0; s < PAGE_TABLE_ENTRIES; s++) {
+		entry = pml4->entries[s];
+		if (!(entry & PAGE_PRESENT))
+			continue;
+		num_tables++;
+
+		pdp = (struct page_table *)KADDR(PAGE_ADDR(entry));
+		for (t = 0; t < PAGE_TABLE_ENTRIES; t++) {
+			entry = pdp->entries[t];
+			if (!(entry & PAGE_PRESENT))
+				continue;
+			num_tables++;
+
+			pd = (struct page_table *)KADDR(PAGE_ADDR(entry));
+			for (u = 0; u < PAGE_TABLE_ENTRIES; u++) {
+				entry = pd->entries[u];
+				if (!(entry & PAGE_PRESENT))
+					continue;
+				if (entry & PAGE_HUGE)
+					continue;
+				num_tables++;
+			}
+		}
+	}
+
+	return num_tables;
+
 }
 
 /**
@@ -593,15 +638,17 @@ int swap_pages() {
 * Returns 1 (success) / 0 (fail)
 */
 int oom_kill_process() {
+	process_to_kill = -1;	
+
     // Walk envs list and compute RSS for each process based on the stats 
     // stored there. Choose the process with the highest score.
-	process_to_kill = -1;
-
 	lock_env();
     for (counter = 0; counter < NENV; counter++) {
-    	current_rss = (envs[counter].num_alloc + envs[counter].num_swap + envs[counter].num_tables)
-    	 / PAGE_SIZE + npages/1000;
-    	cprintf("OOM process %llx, alloc %d, score %d\n", envs[counter].env_id, envs[counter].num_alloc, current_rss);
+    	current_rss = (count_allocated_pages(&envs[counter]) 
+    		+ count_swapped_pages(&envs[counter]) 
+    		+ count_table_pages(&envs[counter])
+    		) / PAGE_SIZE + npages/1000;
+    	cprintf("OOM process %llx, alloc %d, score %d\n", envs[counter].env_id, current_rss);
     	if (current_rss > highest_rss) {
     		highest_rss = current_rss;
     		process_to_kill = envs[counter].env_id;
@@ -652,16 +699,16 @@ int page_reclaim() {
 	}
 
     // First, try to swap num pages.
-    if (! swap_pages())
+    if (! swap_pages()) {
     	// If not successful, go for OOM killing.
     	res = oom_kill_process();
     	if (lock) {
 	    	lock_pagealloc();
 	    }
 	    return res;
-
-    if (lock) {
-    	lock_pagealloc();
+    	if (lock) {
+    		lock_pagealloc();
+    	}
     }
     return 1;
 }

@@ -741,11 +741,6 @@ int entry_in_table(physaddr_t *entry, int create)
                 return 0;
             }
 
-            // Increment table counter if running an user env
-            if (curenv && curenv->env_status == ENV_RUNNING && curenv->env_cpunum == cpunum()) {
-                inc_tables_in_env(curenv);
-            }
-
             page_increm(page);
             new = (struct page_table *)KADDR(page2pa(page));
             *entry = PADDR(new) | PAGE_PRESENT | PAGE_USER | PAGE_WRITE;

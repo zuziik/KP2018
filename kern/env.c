@@ -153,7 +153,6 @@ static int env_setup_vm(struct env *e)
     /* LAB 3: your code here. */
     page_increm(p);
     e->env_pml4 = (struct page_table *)KADDR(page2pa(p));
-    e->num_tables++;
 
     // The initial VA below UTOP is empty
     for (i = 0; i < PML4_INDEX(USER_TOP); i++) {
@@ -247,10 +246,6 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
     e->timeslice = MAXTIMESLICE;
     e->prev_time = 0;
     e->pause = -1;
-
-    e->num_alloc = 0;
-    e->num_swap = 0;
-    e->num_tables = 0;
 
     /*
      * Clear out all the saved register state, to prevent the register values of
@@ -517,8 +512,6 @@ void env_free(struct env *e)
 
     env_free_page_tables(e->env_pml4, 3);
     e->env_pml4 = NULL;
-    e->num_alloc = 0;
-    e->num_tables = 0;
 
     env_remove_reverse_mappings(e);
 

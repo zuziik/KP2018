@@ -24,7 +24,7 @@ struct swap_slot *free_swap_slots;		/* Linked list of free swap slots */
 // For each PAGE_SIZE/SECTSIZE sectors on disk (aligned)
 struct swap_slot {
 	uint8_t is_used;
-	struct mapped_va *reverse_mapping; // all VAs (per env) that used to map the physical page
+	struct env_va_mapping *reverse_mapping; // all VAs (per env) that used to map the physical page
 				      				   // that is now swapped out in the slot
 	struct swap_slot *prev;
 	struct swap_slot *next;
@@ -38,11 +38,18 @@ struct swapped_va {
 };
 
 // Structure to keep track of VAs that map a specific physical page
-struct mapped_va {
-	void *va;
+// 2D struct - a list is stored per env
+struct env_va_mapping {
 	struct env *e;
+	struct va_mapping *list;
+	struct env_va_mapping *next;
+};
+
+// List of reverse mappings for a specific physical page and environment
+struct va_mapping {
+	void *va;
 	int perm;
-	struct mapped_va *next;
+	struct va_mapping *next;	
 };
 
 
@@ -58,12 +65,6 @@ int swap_out(struct page_info *p);
 void set_nfreepages(size_t num);
 void inc_nfreepages(int huge);
 void dec_nfreepages(int huge);
-void inc_allocated_in_env(struct env *e);
-void dec_allocated_in_env(struct env *e);
-void inc_swapped_in_env(struct env *e);
-void dec_swapped_in_env(struct env *e);
-void inc_tables_in_env(struct env *e);
-void dec_tables_in_env(struct env *e);
 
 int available_freepages(size_t num);
 void page_fault_remove(struct page_info *page);

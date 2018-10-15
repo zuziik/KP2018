@@ -396,9 +396,6 @@ int cow(void *fault_va, uintptr_t fault_va_aligned, int is_write) {
     else {
         new_page = page_alloc(ALLOC_ZERO);
 
-        /* LAB 7 update counters */
-        inc_allocated_in_env(curenv);
-
         memcpy((void *) KADDR(page2pa(new_page)), (void *) KADDR(page2pa(old_page)), PAGE_SIZE);
         // this will both remove the old mapping and create a new mapping,
         // and also update the refcounts
@@ -486,8 +483,6 @@ int page_fault_load_page(void *fault_va_aligned) {
         memcpy((void *) va_dst_start, (void *) va_src_start, copy_size);
     }
 
-    /* LAB 7 update counters */
-    inc_allocated_in_env(curenv);
     /* LAB 7 add reverse mapping */
     add_reverse_mapping(curenv, fault_va_aligned, page, vma->perm);
 
