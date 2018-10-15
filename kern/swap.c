@@ -251,9 +251,42 @@ void remove_reverse_mapping(struct env *e, void *va, struct page_info *page) {
 * Called from env_free()
 */
 void env_remove_reverse_mappings(struct env *e) {
-	//TODO
-	// For this, we either must walk all pages (!),
-	// or update env_free_page_tables() to have information about the environment
+	int i;
+
+	struct va_mapping *curr_va_mapping;
+	struct va_mapping *next_va_mapping;
+	struct env_va_mapping *curr_env_va_mapping;
+	struct env_va_mapping *prev_env_va_mapping;
+
+	// Remove mappings for each page
+	for (i = 0; i < npages; i++) {
+		curr_env_va_mapping = pages[i].reverse_mapping;
+		prev_env_va_mapping = NULL;
+
+		// Find list of mappings for the specified environment
+		while ((curr_env_va_mapping != NULL) && (curr_env_va_mapping->e != e)) {
+			prev_env_va_mapping = curr_env_va_mapping;
+			curr_env_va_mapping = curr_env_va_mapping->next;
+		}
+		// Mapping for env is not there, nothing to remove, continue with next page
+		if (curr_env_va_mapping == NULL)
+			continue;
+
+		curr_va_mapping = curr_env_va_mapping->list;
+
+		while (curr_va_mapping != NULL) {
+			next_va_mapping = curr_va_mapping->next;
+			// free(curr_va_mapping); TODO ZUZANA
+		}
+
+		// Remove env list from the page mappings
+		if (prev_env_va_mapping == NULL)
+			pages[i].reverse_mapping = curr_env_va_mapping->next;
+		else
+			prev_env_va_mapping->next = curr_env_va_mapping->next;
+		// free(curr_env_va_mapping); TODO ZUZANA
+
+	}
 }
 
 
