@@ -232,6 +232,12 @@ int swap_in(struct swap_slot *slot) {
 */
 void remove_reverse_mapping(struct env *e, void *va, struct page_info *page) {
 
+	if (page == NULL)
+		page = pa2page(page_walk(e->env_pml4, va, 0));
+
+	if (page == NULL)
+		return;
+
 	struct mapped_va *curr = page->reverse_mapping;
 	struct mapped_va *prev = page->reverse_mapping;
 
@@ -409,6 +415,7 @@ void dec_allocated_in_env(struct env *e) {
 	env_unlock_env(lock);
 }
 
+
 void inc_swapped_in_env(struct env *e) {
 	int lock = env_lock_env();
 	e->num_swap++;
@@ -579,8 +586,6 @@ int oom_kill_process() {
 
 	lock_env();
     for (counter = 0; counter < NENV; counter++) {
-    	// TODO fix - compute RSS score using env.used_pages
-    	// I don't get the formula - what is RSS there?
     	current_rss = (envs[counter].num_alloc + envs[counter].num_swap + envs[counter].num_tables)
     	 / PAGE_SIZE + npages/1000;
     	cprintf("OOM process %llx, alloc %d, score %d\n", envs[counter].env_id, envs[counter].num_alloc, current_rss);
@@ -624,9 +629,8 @@ int oom_kill_process() {
 * function from there.
 * Returns 1 (success) / 0 (fail)
 */
-int page_reclaim(size_t num) {
+int page_reclaim() {
     // First, try to swap num pages.
-	// Num - because we might want to support small/huge pages.
     if (! swap_pages())
     	// If not successful, go for OOM killing.
     	return oom_kill_process();

@@ -37,12 +37,12 @@ struct spinlock master_lock = {
     .name = "master_lock"
 #endif
 };
+#endif /* USE_BIG_KERNEL_LOCK */
 struct spinlock nfreepages_lock = {
 #ifdef DEBUG_SPINLOCK
     .name = "nfreepages_lock"
 #endif
 };
-#endif /* USE_BIG_KERNEL_LOCK */
 
 /*
  * Check whether this CPU is holding the lock.

@@ -17,7 +17,7 @@ void vma_make_unused(struct env *env, struct vma *vma) {
             (vma->next)->prev = NULL;
         }
     }
-
+    
     // VMA is not the first entry
     else {
         (vma->prev)->next = vma->next;
@@ -31,6 +31,14 @@ void vma_make_unused(struct env *env, struct vma *vma) {
     vma->va = NULL;
     vma->next = NULL;
     vma->type = VMA_UNUSED;
+    vma->len = 0;
+    vma->perm = 0;
+    vma->mem_va = NULL;
+    vma->file_va = NULL;
+    vma->mem_size = 0;
+    vma->file_size = 0;
+    vma->swapped_pages = NULL;
+
     vma->prev = last_vma;
     last_vma->next = vma;
 }
@@ -199,9 +207,14 @@ void vma_map_populate(uintptr_t va, size_t size, int perm, struct env *env) {
         if (page == NULL) {
             panic("Out of memory in VMA_MAP_POPULATE");
         }
+        // LAB 7
+        inc_allocated_in_env(env);
+
         if (page_insert(env->env_pml4, page, (void *) virt_addr, perm) != 0) {
             panic("Could not map whole VMA in page tables with flag MAP_POPULATE\n");
         }
+        // LAB 7
+        add_reverse_mapping(env, (void *) virt_addr, page, perm);
         virt_addr += PAGE_SIZE;
     }
 }
@@ -225,6 +238,7 @@ void vma_unmap(uintptr_t va, size_t size, struct env *env) {
     // Remove and unmap the actual entries
     for (vi = va; vi < va + size; vi += PAGE_SIZE) {
         page_remove(env->env_pml4, (void *)vi);
+        remove_reverse_mapping(env, (void *)vi, NULL);
     }
 
     // Start to remove page tables, then page dir tables, then page dir pointer tables

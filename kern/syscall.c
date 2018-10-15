@@ -280,6 +280,8 @@ void copy_vma(struct env *old, struct env *new) {
         vma_new->mem_size = vma_old->mem_size;
         vma_new->file_size = vma_old->file_size;
 
+        vma_new->swapped_pages = vma_old->swapped_pages;
+
         // Go to next vma
         vma_old = vma_old->next;
         vma_new = vma_new->next;
