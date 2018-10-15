@@ -134,8 +134,8 @@ int swap_out(struct page_info *p) {
 
 	for (i = 0; i < NENV; i++) {
 		if (affected_envs[i]) {
-			envs[i].num_swap++;
-			envs[i].num_alloc--;
+			inc_swapped_in_env(&envs[i]);
+			dec_allocated_in_env(&envs[i]);
 		}
 	}
 
@@ -208,8 +208,8 @@ int swap_in(struct swap_slot *slot) {
 
 	for (i = 0; i < NENV; i++) {
 		if (affected_envs[i]) {
-			envs[i].num_swap--;
-			envs[i].num_alloc++;
+			dec_swapped_in_env(&envs[i]);
+			inc_allocated_in_env(&envs[i]);
 		}
 	}
 
@@ -342,8 +342,9 @@ void vma_remove_swapped_page(struct env *e, void *va) {
 * Initializes freepages counter. Called during boot.
 */
 void set_nfreepages(size_t num) {
-	// TODO locking?
+	lock_nfreepages();
 	nfreepages = num;
+	unlock_nfreepages();
 }
 
 /**
@@ -353,8 +354,10 @@ void set_nfreepages(size_t num) {
 * swap thread.
 */
 int available_freepages(size_t num) {
-	// TODO locking?
-	return nfreepages >= num;
+	lock_nfreepages();
+	int res = nfreepages >= num;
+	unlock_nfreepages();
+	return res;
 }
 
 /**
@@ -365,11 +368,12 @@ int available_freepages(size_t num) {
 * This function is called from page_free().
 */
 void inc_nfreepages(int huge) {
-	// TODO locking?
+	lock_nfreepages();
 	if (huge)
 		nfreepages += SMALL_PAGES_IN_HUGE;
 	else
 		nfreepages++;
+	unlock_nfreepages();
 }
 
 /**
@@ -380,11 +384,12 @@ void inc_nfreepages(int huge) {
 * This function is called from page_alloc().
 */
 void dec_nfreepages(int huge) {
-	// TODO locking?
+	lock_nfreepages();
 	if (huge)
 		nfreepages -= SMALL_PAGES_IN_HUGE;
 	else
 		nfreepages--;
+	unlock_nfreepages();
 }
 
 //--------------------------------------------------------
@@ -393,28 +398,39 @@ void dec_nfreepages(int huge) {
 // remove them if not)
 
 void inc_allocated_in_env(struct env *e) {
+	int lock = env_lock_env();
 	e->num_alloc++;
+	env_unlock_env(lock);
 }
 
 void dec_allocated_in_env(struct env *e) {
+	int lock = env_lock_env();
 	e->num_alloc--;
+	env_unlock_env(lock);
 }
 
-
 void inc_swapped_in_env(struct env *e) {
+	int lock = env_lock_env();
 	e->num_swap++;
+	env_unlock_env(lock);
 }
 
 void dec_swapped_in_env(struct env *e) {
+	int lock = env_lock_env();
 	e->num_swap--;
+	env_unlock_env(lock);
 }
 
 void inc_tables_in_env(struct env *e) {
+	int lock = env_lock_env();
 	e->num_tables++;
+	env_unlock_env(lock);
 }
 
 void dec_tables_in_env(struct env *e) {
+	int lock = env_lock_env();
 	e->num_tables--;
+	env_unlock_env(lock);
 }
 
 
@@ -529,7 +545,12 @@ struct page_info *page_fault_pop_head() {
 */
 int swap_pages() {
 	return 0; // remove this when everything works
+
+	// Get the amount of pages to free
+	lock_nfreepages();
 	int to_free = FREEPAGE_THRESHOLD + FREEPAGE_OVERTHRESHOLD - nfreepages;
+	lock_nfreepages();
+
 	int i;
 	struct page_info *page;
 
@@ -556,6 +577,7 @@ int oom_kill_process() {
     // stored there. Choose the process with the highest score.
 	process_to_kill = -1;
 
+	lock_env();
     for (counter = 0; counter < NENV; counter++) {
     	// TODO fix - compute RSS score using env.used_pages
     	// I don't get the formula - what is RSS there?
@@ -567,6 +589,7 @@ int oom_kill_process() {
     		process_to_kill = envs[counter].env_id;
     	}
     }
+    unlock_env();
 
     if (process_to_kill == -1) {
     	panic("OOM killer - No processes to kill!");

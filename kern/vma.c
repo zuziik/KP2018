@@ -17,7 +17,7 @@ void vma_make_unused(struct env *env, struct vma *vma) {
             (vma->next)->prev = NULL;
         }
     }
-    
+
     // VMA is not the first entry
     else {
         (vma->prev)->next = vma->next;
