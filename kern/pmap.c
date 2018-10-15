@@ -30,7 +30,7 @@ static void mem_init_mp(void);
 static void boot_map_region(struct page_table *pml4, uintptr_t va, size_t size,
     physaddr_t pa, uint64_t perm);
 static void boot_map_kernel(struct elf *elf_hdr);
-static physaddr_t *page_walk(struct page_table *pml4, const void *va, int create);
+physaddr_t *page_walk(struct page_table *pml4, const void *va, int create);
 static void check_page_free_list(bool only_low_memory);
 static void check_page_alloc(void);
 static void check_kern_pml4(void);

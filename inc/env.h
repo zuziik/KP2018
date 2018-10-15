@@ -104,7 +104,7 @@ struct vma {
     uint64_t file_size; // "..." length "... ", binary source length
 
     /* LAB 7 currently swapped out VAs */
-    struct swapped_va *swapped_pages;
+    struct swapped *swapped_pages;
 };
 
 struct kthread {

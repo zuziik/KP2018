@@ -1,6 +1,5 @@
 #include <kern/swap.h>
 #include <kern/vma.h>
-#include <kern/pmap.h>
 
 
 // struct page_fault *page_faults = NULL;
@@ -8,10 +7,10 @@ struct page_info *page_fault_head = NULL;
 struct page_info *page_fault_tail = NULL;
 
 
-/**
-* Initialization of swapping functionality. Prepares control
-* datastructure to keep track on changes on the disk.
-*/
+/*
+ * Initialization of swapping functionality. Prepares control
+ * datastructure to keep track on changes on the disk.
+ */
 void swap_init() {
 
 	// Allocating memory for disk_slots data structure
@@ -55,10 +54,14 @@ void swap_init() {
 	free_swap_slots = swap_slots;
 }
 
-/** 
-* Removes head from the free_disk_slots list
-* Returns disk slot or NULL
-*/
+//-----------------------------------------------------------------------------
+// Pool for struct swap_slot
+//-----------------------------------------------------------------------------
+
+/*
+ * Removes head from the free_swap_slots list
+ * Returns swap slot or NULL
+ */
 struct swap_slot *alloc_swap_slot() {
 	if (free_swap_slots == NULL) {
 		return NULL;
@@ -72,9 +75,9 @@ struct swap_slot *alloc_swap_slot() {
 	return slot;
 }
 
-/**
-* Marks the swap space slot as free, i.e. adds it to the free list
-*/
+/*
+ * Marks the swap space slot as free, i.e. adds it to the free list
+ */
 void free_swap_slot(struct swap_slot *slot) {
 	slot->next = free_swap_slots;
 	slot->prev = NULL;
@@ -82,252 +85,199 @@ void free_swap_slot(struct swap_slot *slot) {
 	free_swap_slots = slot;
 }
 
-/**
-* Swaps out the physical page on a disk.
-* Returns 1 (success) / 0 (fail)
-*/
-int swap_out(struct page_info *p) {
-	// 1.Copy page on a disk
-	// Blocking now
-	// Maybe we don't want any local variables
-	// Always a small page
-	int i;
-	struct swap_slot *slot;
-	struct env_va_mapping *env_va_mapping;
-	struct va_mapping *va_mapping;
+//-----------------------------------------------------------------------------
+// Pool for struct swapped
+//-----------------------------------------------------------------------------
 
-	lock_swapslot();
-	slot = alloc_swap_slot();
-
-	// No swap space available, return fail
-	if (slot == NULL) {
-		unlock_swapslot();
-		return 0;
-	}
-
-	ide_start_write(slot2sector(slot), SECTORS_PER_PAGE);
-	for (i = 0; i < SECTORS_PER_PAGE; i++)
-		while (!ide_is_ready());
-		ide_write_sector((char *) KADDR(page2pa(p)) + i*SECTSIZE);
-
-	// 2. Remove VMA list from page_info and map it to swap structure
-	slot->reverse_mapping = p->reverse_mapping;
-	p->reverse_mapping = NULL;
-
-	// 3. Zero-out all entries pointing to this physical page and
-	// decrease reference count on the page
-	// 4. Add the slot to every VMA swapped_pages list
-	env_va_mapping = slot->reverse_mapping;
-	while (env_va_mapping != NULL) {
-		va_mapping = env_va_mapping->list;
-		while (va_mapping != NULL) {
-			// TODO Problem with invalidating TLB cache, see tlb_invalidate() implementation
-			page_remove(env_va_mapping->e->env_pml4, va_mapping->va);
-			vma_add_swapped_page(env_va_mapping->e, va_mapping->va, slot);
-			va_mapping = va_mapping->next;
-		}
-		env_va_mapping = env_va_mapping->next;
-	}
-
-	// 5. Free the physical page
-	if (p->pp_ref != 0) {
-		panic("[SWAP_OUT] Didn't remove all the mappings to the swapped out page");
-	}
-	p->pp_ref = 1;
-	page_decref(p);
-
-	unlock_swapslot();
-	return 1;
+/*
+ * Removes head from the free_swapped list
+ * Returns swapped struct or NULL
+ * Panics if we can't allocate any new struct
+ */
+struct swapped *alloc_swapped_struct() {
+	return NULL;
 }
 
-/**
-* Allocates a new physical page and copies it back from disk.
-* + There will be another function that calls this one, which
-* first walks the swap_slots array to search for the slot which
-* contains the swapped out VA+env / PTE.
-* Returns 1 (success) / 0 (fail)
-*/
-int swap_in(struct swap_slot *slot) {
-
-	int i;
-	struct env_va_mapping *env_va_mapping;
-	struct va_mapping *va_mapping;
-
-	// 1. Allocate a page
-	struct page_info *p = page_alloc(0);
-	if (p == NULL)
-		return 0;
-
-	// 2. Copy data back from the disk
-	lock_swapslot();
-	ide_start_read(slot2sector(slot), SECTORS_PER_PAGE);
-	for (i = 0; i < SECTORS_PER_PAGE; i++)
-		while (!ide_is_ready());
-		ide_read_sector((char *) KADDR(page2pa(p)) + i*SECTSIZE);
-
-	// 3. Free the swap space
-	free_swap_slot(slot);
-
-	// 4. Walk the saved reverse mappings and map the page everywhere
-	// it was mapped before + increase the refcount with each mapping
-	// 5. Remove the slot from swapped_pages list of each VMA
-	env_va_mapping = slot->reverse_mapping;
-	while (env_va_mapping != NULL) {
-		va_mapping = env_va_mapping->list;
-			while (va_mapping != NULL) {
-			page_insert(env_va_mapping->e->env_pml4, va_mapping->va, p, va_mapping->perm);
-			vma_remove_swapped_page(env_va_mapping->e, va_mapping->va);
-			va_mapping = va_mapping->next;
-		}
-		env_va_mapping = env_va_mapping->next;
-	}
-
-	// 6. Correctly set the reverse mappings to the new page
-	p->reverse_mapping = slot->reverse_mapping;
-	slot->reverse_mapping = NULL;
-
-	unlock_swapslot();
-	return 1;
+/*
+ * Marks the swapped struct as free, i.e. adds it to the free list
+ */
+void free_swapped_struct(struct swapped *swapped) {
 }
 
-/**
-* Remove a reverse mapping from a physical page
-*/
+//-----------------------------------------------------------------------------
+// Pool for struct mapping
+//-----------------------------------------------------------------------------
+
+/*
+ * Removes head from the free_mappings list
+ * Returns mapping struct or NULL
+ * Panics if we can't allocate any new struct
+ */
+struct mapping *alloc_mapping_struct() {
+	return NULL;
+}
+
+/*
+ * Marks the mapping struct as free, i.e. adds it to the free list
+ */
+void free_mapping_struct(struct mapping *mapping) {
+}
+
+//-----------------------------------------------------------------------------
+// Pool for struct env_mapping
+//-----------------------------------------------------------------------------
+
+/*
+ * Removes head from the free_env_mappings list
+ * Panics if we can't allocate any new struct
+ * Returns env_mapping struct or NULL
+ */
+struct env_mapping *alloc_env_mapping_struct() {
+	return NULL;
+}
+
+/*
+ * Marks the env_mapping struct as free, i.e. adds it to the free list
+ */
+void free_env_mapping_struct(struct env_mapping *env_mapping) {
+}
+
+//-----------------------------------------------------------------------------
+// Keeping track of reverse mappings (physical page -> env & virtual page)
+//-----------------------------------------------------------------------------
+
+/*
+ * Adds a reverse mapping to a physical page
+ */
+void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int perm) {
+
+	struct mapping *new_mapping = alloc_mapping_struct();	
+
+	struct env_mapping *tmp_env_mapping;
+
+	new_mapping->va = va;
+	new_mapping->perm = perm;
+
+	tmp_env_mapping = page->reverse_mapping;
+
+	while ((tmp_env_mapping->e != e) && (tmp_env_mapping != NULL))
+		tmp_env_mapping = tmp_env_mapping->next;
+
+	// Nothing is mapped for the env yet
+	if (tmp_env_mapping == NULL) {
+		tmp_env_mapping = alloc_env_mapping_struct();
+		tmp_env_mapping->e = e;
+		tmp_env_mapping->next = page->reverse_mapping;
+		page->reverse_mapping = tmp_env_mapping;
+	}
+
+	new_mapping->next = tmp_env_mapping->list;
+	tmp_env_mapping->list = new_mapping;
+}
+
+
+/*
+ * Removes a reverse mapping from a physical page
+ */
 void remove_reverse_mapping(struct env *e, void *va, struct page_info *page) {
 
-	// TODO ZUZANA
-	// if (page == NULL)
-	// 	page = pa2page(page_walk(e->env_pml4, va, 0));
+	struct mapping *curr_mapping;	
+	struct mapping *prev_mapping;	
+	struct env_mapping *curr_env_mapping = page->reverse_mapping;
+	struct env_mapping *prev_env_mapping = NULL;
 
-	if (page == NULL)
-		return;
-
-	struct va_mapping *curr_va_mapping;	
-	struct va_mapping *prev_va_mapping;	
-	struct env_va_mapping *curr_env_va_mapping = page->reverse_mapping;
-	struct env_va_mapping *prev_env_va_mapping = NULL;
-
-	while ((curr_env_va_mapping != NULL) && (curr_env_va_mapping->e != e)) {
-		prev_env_va_mapping = curr_env_va_mapping;
-		curr_env_va_mapping = curr_env_va_mapping->next;
+	while ((curr_env_mapping != NULL) && (curr_env_mapping->e != e)) {
+		prev_env_mapping = curr_env_mapping;
+		curr_env_mapping = curr_env_mapping->next;
 	}
 
 	// Mapping for env is not there, nothing to remove, return
-	if (curr_env_va_mapping == NULL)
+	if (curr_env_mapping == NULL)
 		return;
 
-	curr_va_mapping = curr_env_va_mapping->list;
-	prev_va_mapping = NULL;
+	curr_mapping = curr_env_mapping->list;
+	prev_mapping = NULL;
 
-	while ((curr_va_mapping != NULL) && (curr_va_mapping->va != va)) {
-		prev_va_mapping = curr_va_mapping;
-		curr_va_mapping = curr_va_mapping->next;
+	while ((curr_mapping != NULL) && (curr_mapping->va != va)) {
+		prev_mapping = curr_mapping;
+		curr_mapping = curr_mapping->next;
 	}
 
 	// Mapping for this env and va is not there, nothing to remove, return
-	if (curr_va_mapping == NULL)
+	if (curr_mapping == NULL)
 		return;
 
 	// VA is the first in the list
-	if (prev_va_mapping == NULL)
-		curr_env_va_mapping->list = curr_va_mapping->next;
+	if (prev_mapping == NULL)
+		curr_env_mapping->list = curr_mapping->next;
 	else
-		prev_va_mapping->next = curr_va_mapping->next;
+		prev_mapping->next = curr_mapping->next;
 
-	// TODO ZUZANA free(curr_va_mapping)
+	free_mapping_struct(curr_mapping);
 
 	// All mappings of the environment were freed, remove the list for the environment
-	if (curr_env_va_mapping->list == NULL) {
-		if (prev_env_va_mapping == NULL)
-			page->reverse_mapping = curr_env_va_mapping->next;
+	if (curr_env_mapping->list == NULL) {
+		if (prev_env_mapping == NULL)
+			page->reverse_mapping = curr_env_mapping->next;
 		else
-			prev_env_va_mapping->next = curr_env_va_mapping->next;
-		// TODO ZUZANA free(curr_env_va_mapping)
+			prev_env_mapping->next = curr_env_mapping->next;
+		free_env_mapping_struct(curr_env_mapping);
 	}
 }
 
-/**
-* Remove reverse mappings of this environment from all pages
-* Called from env_free()
-*/
+/*
+ * Removes reverse mappings of this environment from all pages
+ * Called from env_free()
+ */
 void env_remove_reverse_mappings(struct env *e) {
 	int i;
 
-	struct va_mapping *curr_va_mapping;
-	struct va_mapping *next_va_mapping;
-	struct env_va_mapping *curr_env_va_mapping;
-	struct env_va_mapping *prev_env_va_mapping;
+	struct mapping *curr_mapping;
+	struct mapping *next_mapping;
+	struct env_mapping *curr_env_mapping;
+	struct env_mapping *prev_env_mapping;
 
 	// Remove mappings for each page
 	for (i = 0; i < npages; i++) {
-		curr_env_va_mapping = pages[i].reverse_mapping;
-		prev_env_va_mapping = NULL;
+		curr_env_mapping = pages[i].reverse_mapping;
+		prev_env_mapping = NULL;
 
 		// Find list of mappings for the specified environment
-		while ((curr_env_va_mapping != NULL) && (curr_env_va_mapping->e != e)) {
-			prev_env_va_mapping = curr_env_va_mapping;
-			curr_env_va_mapping = curr_env_va_mapping->next;
+		while ((curr_env_mapping != NULL) && (curr_env_mapping->e != e)) {
+			prev_env_mapping = curr_env_mapping;
+			curr_env_mapping = curr_env_mapping->next;
 		}
 		// Mapping for env is not there, nothing to remove, continue with next page
-		if (curr_env_va_mapping == NULL)
+		if (curr_env_mapping == NULL)
 			continue;
 
-		curr_va_mapping = curr_env_va_mapping->list;
+		curr_mapping = curr_env_mapping->list;
 
-		while (curr_va_mapping != NULL) {
-			next_va_mapping = curr_va_mapping->next;
-			// free(curr_va_mapping); TODO ZUZANA
+		while (curr_mapping != NULL) {
+			next_mapping = curr_mapping->next;
+			free_mapping_struct(curr_mapping);
 		}
 
 		// Remove env list from the page mappings
-		if (prev_env_va_mapping == NULL)
-			pages[i].reverse_mapping = curr_env_va_mapping->next;
+		if (prev_env_mapping == NULL)
+			pages[i].reverse_mapping = curr_env_mapping->next;
 		else
-			prev_env_va_mapping->next = curr_env_va_mapping->next;
-		// free(curr_env_va_mapping); TODO ZUZANA
+			prev_env_mapping->next = curr_env_mapping->next;
+		    free_env_mapping_struct(curr_env_mapping);
 
 	}
 }
 
+//-----------------------------------------------------------------------------
+// Keeping track of swapped pages (per env, per VMA)
+//-----------------------------------------------------------------------------
 
-/**
-* Adds a reverse mapping to a physical page
-*/
-void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int perm) {
-
-	// TODO ZUZANA change how it's allocated
-	struct va_mapping new_va_mapping;	
-	// TODO ZUZANA change how to alloc + this one only if needed	
-	struct env_va_mapping new_env_va_mapping;
-
-	struct env_va_mapping *tmp_env_va_mapping;
-
-	new_va_mapping.va = va;
-	new_va_mapping.perm = perm;
-
-	tmp_env_va_mapping = page->reverse_mapping;
-
-	while ((tmp_env_va_mapping->e != e) && (tmp_env_va_mapping != NULL))
-		tmp_env_va_mapping = tmp_env_va_mapping->next;
-
-	// Nothing is mapped for the env yet
-	if (tmp_env_va_mapping == NULL) {
-		tmp_env_va_mapping = &new_env_va_mapping;
-		tmp_env_va_mapping->e = e;
-		tmp_env_va_mapping->next = page->reverse_mapping;
-		page->reverse_mapping = tmp_env_va_mapping;
-	}
-
-	new_va_mapping.next = tmp_env_va_mapping->list;
-	tmp_env_va_mapping->list = &new_va_mapping;
-}
-
-/**
-* Searches swapped pages list of the given VMA and looks for the given VA.
-* If found, returns pointer to the swap slot where the page is swapped out.
-*/
+/*
+ * Searches swapped pages list of the given VMA and looks for the given VA.
+ * If found, returns pointer to the swap slot where the page is swapped out.
+ */
 struct swap_slot *vma_lookup_swapped_page(struct vma *vma, void *va) {
-	struct swapped_va *swapped = vma->swapped_pages;
+	struct swapped *swapped = vma->swapped_pages;
 	while ((swapped != NULL) && (swapped->va != va)) {
 		swapped = swapped->next;
 	}
@@ -337,38 +287,36 @@ struct swap_slot *vma_lookup_swapped_page(struct vma *vma, void *va) {
 	return swapped->slot;
 }
  
-/**
-* Adds the VA and swap slot to the corresponding VMA list of swapped out pages.
-*/     
+/*
+ * Adds the VA and swap slot to the corresponding VMA list of swapped out pages.
+ */     
 void vma_add_swapped_page(struct env *e, void *va, struct swap_slot *slot) {
 	struct vma *vma = vma_lookup(e, va);
 	if (vma == NULL)
 		return;
 
-	// TODO: Is THIS how we want to allocate it? Probably not, but then how?
-	struct swapped_va swapped;
-	swapped.va = va;
-	swapped.slot = slot;
-	swapped.next = vma->swapped_pages;
+	struct swapped *swapped = alloc_swapped_struct();
+	swapped->va = va;
+	swapped->slot = slot;
+	swapped->next = vma->swapped_pages;
 
-	vma->swapped_pages = &swapped;
+	vma->swapped_pages = swapped;
 }
 
-/**
-* Removes the VA from the corresponding VMA list of swapped out pages.
-*/
+/*
+ * Removes the VA from the corresponding VMA list of swapped out pages.
+ */
 void vma_remove_swapped_page(struct env *e, void *va) {
 	struct vma *vma = vma_lookup(e, va);
 	if (vma == NULL)
 		return;
 
-	struct swapped_va *curr = vma->swapped_pages;
-	struct swapped_va *prev = vma->swapped_pages;
+	struct swapped *curr = vma->swapped_pages;
+	struct swapped *prev = vma->swapped_pages;
 
-	// First one? Remove head
-	// TODO: Is it ok that we just let the removed structure go? No free?
 	if (curr->va == va) {
 		vma->swapped_pages = curr->next;
+		free_swapped_struct(curr);
 		return;
 	}
 
@@ -377,6 +325,7 @@ void vma_remove_swapped_page(struct env *e, void *va) {
 	while (curr != NULL) {
 		if (curr->va == va) {
 			prev->next = curr->next;
+			free_swapped_struct(curr);
 			return;
 		}
 		prev = curr;
@@ -386,22 +335,25 @@ void vma_remove_swapped_page(struct env *e, void *va) {
 	panic("swapped_va not in vma list\n");
 }
 
+//-----------------------------------------------------------------------------
+// Keeping track of total number of free pages in memory
+//-----------------------------------------------------------------------------
 
-/**
-* Initializes freepages counter. Called during boot.
-*/
+/*
+ * Initializes freepages counter. Called during boot.
+ */
 void set_nfreepages(size_t num) {
 	lock_nfreepages();
 	nfreepages = num;
 	unlock_nfreepages();
 }
 
-/**
-* Returns 1 if num free pages are available, using
-* the freepages counter.
-* Called just before allocation and from a kernel
-* swap thread.
-*/
+/*
+ * Returns 1 if num free pages are available, using
+ * the freepages counter.
+ * Called just before allocation and from a kernel
+ * swap thread.
+ */
 int available_freepages(size_t num) {
 	lock_nfreepages();
 	int res = nfreepages >= num;
@@ -409,13 +361,13 @@ int available_freepages(size_t num) {
 	return res;
 }
 
-/**
-* Increments the counter of the total number of available
-* free pages on the system by num.
-* Num is 1 for small pages and SMALL_PAGES_IN_HUGE for
-* huge pages.
-* This function is called from page_free().
-*/
+/*
+ * Increments the counter of the total number of available
+ * free pages on the system by num.
+ * Num is 1 for small pages and SMALL_PAGES_IN_HUGE for
+ * huge pages.
+ * This function is called from page_free().
+ */
 void inc_nfreepages(int huge) {
 	lock_nfreepages();
 	if (huge)
@@ -425,13 +377,13 @@ void inc_nfreepages(int huge) {
 	unlock_nfreepages();
 }
 
-/**
-* Decrements the counter of the total number of available
-* free pages on the system by num.
-* Num is 1 for small pages and SMALL_PAGES_IN_HUGE for
-* huge pages.
-* This function is called from page_alloc().
-*/
+/*
+ * Decrements the counter of the total number of available
+ * free pages on the system by num.
+ * Num is 1 for small pages and SMALL_PAGES_IN_HUGE for
+ * huge pages.
+ * This function is called from page_alloc().
+ */
 void dec_nfreepages(int huge) {
 	lock_nfreepages();
 	if (huge)
@@ -441,10 +393,14 @@ void dec_nfreepages(int huge) {
 	unlock_nfreepages();
 }
 
-/**
-* Check if the page is part of the page fault list
-* If so, remove it from the list and fix the pointers and globals
-*/
+//-----------------------------------------------------------------------------
+// Keeping track of faulting pages -- LRU (FIFO and then CLOCK queue)
+//-----------------------------------------------------------------------------
+
+/*
+ * Check if the page is part of the page fault list
+ * If so, remove it from the list and fix the pointers and globals
+ */
 void page_fault_remove(struct page_info *page) {
 	// Is the only element in the list, only used to remove from page_free
 	if (page == page_fault_head && page == page_fault_tail) {
@@ -475,15 +431,15 @@ void page_fault_remove(struct page_info *page) {
 	}
 }
 
-/**
-* Inserts the faulting VA at the end of a faulting
-* pages queue (first FIFO, later CLOCK).
-* This function is called from the page fault handler,
-* but only after a new page is allocated (i.e. not
-* if the page fault was a permission issue).
-* Expects fault_va to be aligned.
-* Clock will be enforced in swap_pages()
-*/
+/*
+ * Inserts the faulting VA at the end of a faulting
+ * pages queue (first FIFO, later CLOCK).
+ * This function is called from the page fault handler,
+ * but only after a new page is allocated (i.e. not
+ * if the page fault was a permission issue).
+ * Expects fault_va to be aligned.
+ * Clock will be enforced in swap_pages()
+ */
 void page_fault_queue_insert(uintptr_t fault_va) {
 	int lock = swap_lock_pagealloc();
 
@@ -540,13 +496,127 @@ struct page_info *page_fault_pop_head() {
 	return page;
 }
 
-/**
-* Swaps out pages from the LRU list (FIFO/CLOCK) on the disk, until
-* we have at least FREEPAGE_THRESHOLD pages available.
-* Uses swap_out() function for each of the swapped pages.
-* Called both from direct reclaiming and periodic reclaiming function.
-* Returns 1 (success) / 0 (fail)
+//-----------------------------------------------------------------------------
+// Page reclaiming functions - direct and periodic swapping
+//-----------------------------------------------------------------------------
+
+/*
+ * Swaps out the physical page on a disk.
+ * Returns 1 (success) / 0 (fail)
+ */
+int swap_out(struct page_info *p) {
+	// 1.Copy page on a disk
+	// Blocking now
+	// Maybe we don't want any local variables
+	// Always a small page
+	int i;
+	struct swap_slot *slot;
+	struct env_mapping *env_mapping;
+	struct mapping *mapping;
+
+	lock_swapslot();
+	slot = alloc_swap_slot();
+
+	// No swap space available, return fail
+	if (slot == NULL) {
+		unlock_swapslot();
+		return 0;
+	}
+
+	ide_start_write(slot2sector(slot), SECTORS_PER_PAGE);
+	for (i = 0; i < SECTORS_PER_PAGE; i++)
+		while (!ide_is_ready());
+		ide_write_sector((char *) KADDR(page2pa(p)) + i*SECTSIZE);
+
+	// 2. Remove VMA list from page_info and map it to swap structure
+	slot->reverse_mapping = p->reverse_mapping;
+	p->reverse_mapping = NULL;
+
+	// 3. Zero-out all entries pointing to this physical page and
+	// decrease reference count on the page
+	// 4. Add the slot to every VMA swapped_pages list
+	env_mapping = slot->reverse_mapping;
+	while (env_mapping != NULL) {
+		mapping = env_mapping->list;
+		while (mapping != NULL) {
+			// TODO Problem with invalidating TLB cache, see tlb_invalidate() implementation
+			page_remove(env_mapping->e->env_pml4, mapping->va);
+			vma_add_swapped_page(env_mapping->e, mapping->va, slot);
+			mapping = mapping->next;
+		}
+		env_mapping = env_mapping->next;
+	}
+
+	// 5. Free the physical page -- this should be done automatically because we call page_remove
+	// on all mappings
+
+	// if (p->pp_ref != 0) {
+	// 	panic("[SWAP_OUT] Didn't remove all the mappings to the swapped out page");
+	// }
+	// p->pp_ref = 1;
+	// page_decref(p);
+
+	unlock_swapslot();
+	return 1;
+}
+
+/*
+ * Allocates a new physical page and copies it back from disk.
+ * + There will be another function that calls this one, which
+ * first walks the swap_slots array to search for the slot which
+ * contains the swapped out VA+env / PTE.
+ * Returns 1 (success) / 0 (fail)
 */
+int swap_in(struct swap_slot *slot) {
+
+	int i;
+	struct env_mapping *env_mapping;
+	struct mapping *mapping;
+
+	// 1. Allocate a page
+	struct page_info *p = page_alloc(0);
+	if (p == NULL)
+		return 0;
+
+	// 2. Copy data back from the disk
+	lock_swapslot();
+	ide_start_read(slot2sector(slot), SECTORS_PER_PAGE);
+	for (i = 0; i < SECTORS_PER_PAGE; i++)
+		while (!ide_is_ready());
+		ide_read_sector((char *) KADDR(page2pa(p)) + i*SECTSIZE);
+
+	// 3. Free the swap space
+	free_swap_slot(slot);
+
+	// 4. Walk the saved reverse mappings and map the page everywhere
+	// it was mapped before + increase the refcount with each mapping
+	// 5. Remove the slot from swapped_pages list of each VMA
+	env_mapping = slot->reverse_mapping;
+	while (env_mapping != NULL) {
+		mapping = env_mapping->list;
+			while (mapping != NULL) {
+			page_insert(env_mapping->e->env_pml4, mapping->va, p, mapping->perm);
+			vma_remove_swapped_page(env_mapping->e, mapping->va);
+			mapping = mapping->next;
+		}
+		env_mapping = env_mapping->next;
+	}
+
+	// 6. Correctly set the reverse mappings to the new page
+	p->reverse_mapping = slot->reverse_mapping;
+	slot->reverse_mapping = NULL;
+
+	unlock_swapslot();
+	return 1;
+}
+
+/*
+ * Swaps out pages from the LRU list (FIFO/CLOCK) on the disk, until
+ * we have at least FREEPAGE_THRESHOLD pages available.
+ * Uses swap_out() function for each of the swapped pages.
+ * Called both from direct reclaiming and periodic reclaiming function.
+ * Returns 1 (success) / 0 (fail)
+ */
 int swap_pages() {
 
 	// Get the amount of pages to free
@@ -572,13 +642,63 @@ int swap_pages() {
 	return 1;
 }
 
-/**
-* Returns the number of swapped out pages for the specified envuronment.
-* Used by the oom_kill_process() function.
-*/
+/*
+ * On-demand page reclaiming called if we are out-of memory (in page_alloc).
+ * We could also be out-of-memory in boot_alloc but that would be a worse
+ * problem and we don't want to swap kernel pages, so we don't call this
+ * function from there.
+ * Returns 1 (success) / 0 (fail)
+ */
+int page_reclaim() {
+	// Remove unnecessary locks
+	int lock = 0;
+	int res = 0;
+	if (holding(&pagealloc_lock)) {
+		lock++;
+		unlock_pagealloc();
+	}
+
+    // First, try to swap num pages.
+    if (! swap_pages()) {
+    	// If not successful, go for OOM killing.
+    	res = oom_kill_process();
+    	if (lock) {
+	    	lock_pagealloc();
+	    }
+	    return res;
+    	if (lock) {
+    		lock_pagealloc();
+    	}
+    }
+    return 1;
+}
+
+/*
+ * KERNEL THREAD
+ * Periodically checks whether the number of free pages is above a given threshold.
+ * If not, swaps enough pages to have FREEPAGE_THRESHOLD free pages.
+ * Only one instance of this
+ * kernel thread is running at a time.
+ */
+void kthread_swap() {
+    while (1) {
+        if (! available_freepages(FREEPAGE_THRESHOLD))
+        	swap_pages();
+        kthread_interrupt();
+    }
+}
+
+//-----------------------------------------------------------------------------
+// OOM killer functions
+//-----------------------------------------------------------------------------
+
+/*
+ * Returns the number of swapped out pages for the specified envuronment.
+ * Used by the oom_kill_process() function.
+ */
 uint32_t count_swapped_pages(struct env* e) {
 	struct vma *vma;
-	struct swapped_va *swapped_page;
+	struct swapped *swapped_page;
 	uint32_t num_swap = 0;
 
    	vma = e->vma;
@@ -595,34 +715,34 @@ uint32_t count_swapped_pages(struct env* e) {
     return num_swap;
 }
 
-/**
-* Returns the number of allocated pages for the specified envuronment.
-* (only mapped pages, not page tables)
-* Used by the oom_kill_process() function.
-*/
+/*
+ * Returns the number of allocated pages for the specified envuronment.
+ * (only mapped pages, not page tables)
+ * Used by the oom_kill_process() function.
+ */
 uint32_t count_allocated_pages(struct env* e) {
-	struct env_va_mapping *env_va_mapping;
+	struct env_mapping *env_mapping;
 	uint32_t num_alloc = 0;
 	int i;
 
 	for (i = 0; i < npages; i++) {
-		env_va_mapping = pages[i].reverse_mapping;
-		while ((env_va_mapping != NULL) && (env_va_mapping->e != e)) {
-			env_va_mapping = env_va_mapping->next;
+		env_mapping = pages[i].reverse_mapping;
+		while ((env_mapping != NULL) && (env_mapping->e != e)) {
+			env_mapping = env_mapping->next;
 		}
 		// This page is used by the environment - increment the counter
-		if (env_va_mapping != NULL)
+		if (env_mapping != NULL)
 			num_alloc++;
 	}
 
 	return num_alloc;
 }
 
-/**
-* Returns the number of physical pages used by the specified envuronment
-* for page table tree.
-* Used by the oom_kill_process() function.
-*/
+/*
+ * Returns the number of physical pages used by the specified envuronment
+ * for page table tree.
+ * Used by the oom_kill_process() function.
+ */
 uint32_t count_table_pages(struct env* e) {
 	uint32_t num_tables = 0;
 	int s, t, u;
@@ -664,12 +784,12 @@ uint32_t count_table_pages(struct env* e) {
 
 }
 
-/**
-* Kills the most problematic process, thus freeing its memory.
-* This function is called from page_reclaim() function if the swapping
-* is not possible.
-* Returns 1 (success) / 0 (fail)
-*/
+/*
+ * Kills the most problematic process, thus freeing its memory.
+ * This function is called from page_reclaim() function if the swapping
+ * is not possible.
+ * Returns 1 (success) / 0 (fail)
+ */
 int oom_kill_process() {
 	process_to_kill = -1;	
 
@@ -714,51 +834,3 @@ int oom_kill_process() {
     // Matthijs, do you know how to send a IPI?
     return 0;
 }
-
-/**
-* On-demand page reclaiming called if we are out-of memory (in page_alloc).
-* We could also be out-of-memory in boot_alloc but that would be a worse
-* problem and we don't want to swap kernel pages, so we don't call this
-* function from there.
-* Returns 1 (success) / 0 (fail)
-*/
-int page_reclaim() {
-	// Remove unnecessary locks
-	int lock = 0;
-	int res = 0;
-	if (holding(&pagealloc_lock)) {
-		lock++;
-		unlock_pagealloc();
-	}
-
-    // First, try to swap num pages.
-    if (! swap_pages()) {
-    	// If not successful, go for OOM killing.
-    	res = oom_kill_process();
-    	if (lock) {
-	    	lock_pagealloc();
-	    }
-	    return res;
-    	if (lock) {
-    		lock_pagealloc();
-    	}
-    }
-    return 1;
-}
-
-/**
-* KERNEL THREAD
-* Periodically checks whether the number of free pages is above a given threshold.
-* If not, swaps enough pages to have FREEPAGE_THRESHOLD free pages.
-* Only one instance of this
-* kernel thread is running at a time.
-*/
-void kthread_swap() {
-    while (1) {
-        if (! available_freepages(FREEPAGE_THRESHOLD))
-        	swap_pages();
-        kthread_interrupt();
-    }
-}
-
-

@@ -1,5 +1,6 @@
 #include <kern/vma.h>
 #include <kern/swap.h>
+#include <kern/pmap.h>
 
 /**
 * Removes the specified VMA from the VMAs list
@@ -236,8 +237,9 @@ void vma_unmap(uintptr_t va, size_t size, struct env *env) {
 
     // Remove and unmap the actual entries
     for (vi = va; vi < va + size; vi += PAGE_SIZE) {
+        page = pa2page(*page_walk(env->env_pml4, (void *)vi, 0));
         page_remove(env->env_pml4, (void *)vi);
-        remove_reverse_mapping(env, (void *)vi, NULL);
+        remove_reverse_mapping(env, (void *)vi, page);
     }
 
     // Start to remove page tables, then page dir tables, then page dir pointer tables

@@ -75,6 +75,7 @@ void page_remove(struct page_table *pml4, void *va);
 struct page_info *page_lookup(struct page_table *pml4, void *va, physaddr_t **entry);
 void page_decref(struct page_info *pp);
 void page_increm(struct page_info* pp);
+physaddr_t *page_walk(struct page_table *pml4, const void *va, int create);
 
 void tlb_invalidate(struct page_table *pml4, void *va);
 

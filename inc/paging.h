@@ -33,7 +33,7 @@ struct page_info {
     uint16_t is_available;
 
     /* Linked list of VMAs that contain(ed) VAs mapping this physical page */
-    struct env_va_mapping *reverse_mapping;
+    struct env_mapping *reverse_mapping;
 };
 #endif /* !__ASSEMBLER__ */
 

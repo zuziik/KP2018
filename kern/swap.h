@@ -14,6 +14,22 @@ uint32_t nswapslots;					/* Total number of swap slots on disk (not updated on a
 struct swap_slot *swap_slots;			/* Array of all swap_slots to keep track of them */
 struct swap_slot *free_swap_slots;		/* Linked list of free swap slots */
 
+uint32_t nswapped;						/* Total number of currently allocated swapped structures,
+										can change dynamically on-demand */
+struct swapped *swapped;				/* Array of all allocated swapped structures */
+struct swapped *free_swapped;			/* Linked list of allocated but unused swapped structures*/
+
+uint32_t nenvmappings;					/* Total number of currently allocated env_mapping structures,
+										can change dynamically on-demand */
+struct env_mapping *env_mappings;		/* Array of all allocated env_mapping structures */
+struct env_mapping *free_env_mappings;	/* Linked list of allocated but unused swapped structures*/
+
+uint32_t nmappings;						/* Total number of currently allocated mapping structures,
+										can change dynamically on-demand */
+struct mapping *mappings;				/* Array of all allocated mapping structures */
+struct mapping *free_mappings;			/* Linked list of allocated but unused swapped structures*/
+
+
 // Struct(s) used to save faulting page faults
 // extern struct page_fault *page_faults;
 // struct page_fault {
@@ -24,32 +40,32 @@ struct swap_slot *free_swap_slots;		/* Linked list of free swap slots */
 // For each PAGE_SIZE/SECTSIZE sectors on disk (aligned)
 struct swap_slot {
 	uint8_t is_used;
-	struct env_va_mapping *reverse_mapping; // all VAs (per env) that used to map the physical page
+	struct env_mapping *reverse_mapping; // all VAs (per env) that used to map the physical page
 				      				   // that is now swapped out in the slot
 	struct swap_slot *prev;
 	struct swap_slot *next;
 };
 
 // Structure to keep track of VAs that have been swapped out
-struct swapped_va {
+struct swapped {
     void *va;
     struct swap_slot *slot;
-    struct swapped_va *next;
+    struct swapped *next;
 };
 
 // Structure to keep track of VAs that map a specific physical page
 // 2D struct - a list is stored per env
-struct env_va_mapping {
+struct env_mapping {
 	struct env *e;
-	struct va_mapping *list;
-	struct env_va_mapping *next;
+	struct mapping *list;
+	struct env_mapping *next;
 };
 
 // List of reverse mappings for a specific physical page and environment
-struct va_mapping {
+struct mapping {
 	void *va;
 	int perm;
-	struct va_mapping *next;	
+	struct mapping *next;	
 };
 
 
