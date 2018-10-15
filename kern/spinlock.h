@@ -77,6 +77,7 @@ extern struct spinlock env_lock;        // changing environments
 extern struct spinlock console_lock;    // printing
 extern struct spinlock master_lock;     // super user lock - no one can stop you
 extern struct spinlock nfreepages_lock; // protect nfreepages counter
+extern struct spinlock swapslot_lock;   // disk operations
 
 static inline void lock_pagealloc(void) { spin_lock(&pagealloc_lock); }
 static inline void unlock_pagealloc(void) { spin_unlock(&pagealloc_lock); asm volatile("pause"); }
@@ -90,6 +91,8 @@ static inline void lock_master(void) { spin_lock(&master_lock); }
 static inline void unlock_master(void) { spin_unlock(&master_lock); asm volatile("pause"); }
 static inline void lock_nfreepages(void) { spin_lock(&nfreepages_lock); }
 static inline void unlock_nfreepages(void) { spin_unlock(&nfreepages_lock); asm volatile("pause"); }
+static inline void lock_swapslot(void) { spin_lock(&swapslot_lock); }
+static inline void unlock_swapslot(void) { spin_unlock(&swapslot_lock); asm volatile("pause"); }
 
 
 #ifdef DEBUG_SPINLOCK

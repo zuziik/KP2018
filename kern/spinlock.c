@@ -42,6 +42,11 @@ struct spinlock nfreepages_lock = {
     .name = "nfreepages_lock"
 #endif
 };
+struct spinlock swapslot_lock = {
+#ifdef DEBUG_SPINLOCK
+    .name = "swapslot_lock"
+#endif
+};
 #endif /* USE_BIG_KERNEL_LOCK */
 
 /*

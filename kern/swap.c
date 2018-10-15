@@ -60,8 +60,9 @@ void swap_init() {
 * Returns disk slot or NULL
 */
 struct swap_slot *alloc_swap_slot() {
-	if (free_swap_slots == NULL)
+	if (free_swap_slots == NULL) {
 		return NULL;
+	}
 
 	struct swap_slot *slot = free_swap_slots;
 	free_swap_slots = free_swap_slots->next;
@@ -95,11 +96,14 @@ int swap_out(struct page_info *p) {
 	struct mapped_va *mapping;
 	int affected_envs[NENV];
 
+	lock_swapslot();
 	slot = alloc_swap_slot();
 
 	// No swap space available, return fail
-	if (slot == NULL)
+	if (slot == NULL) {
+		unlock_swapslot();
 		return 0;
+	}
 
 	ide_start_write(slot2sector(slot), SECTORS_PER_PAGE);
 	for (i = 0; i < SECTORS_PER_PAGE; i++)
@@ -114,7 +118,7 @@ int swap_out(struct page_info *p) {
 	// decrease reference count on the page
 	mapping = slot->reverse_mapping;
 	while (mapping != NULL) {
-		// Problem with invalidating TLB cache, see tlb_invalidate() implementation
+		// TODO Problem with invalidating TLB cache, see tlb_invalidate() implementation
 		page_remove(mapping->e->env_pml4, mapping->va);
 		mapping = mapping->next;
 	}
@@ -154,7 +158,7 @@ int swap_out(struct page_info *p) {
 		mapping = mapping->next;
 	}
 
-
+	unlock_swapslot();
 	return 1;
 }
 
@@ -177,6 +181,7 @@ int swap_in(struct swap_slot *slot) {
 		return 0;
 
 	// 2. Copy data back from the disk
+	lock_swapslot();
 	ide_start_read(slot2sector(slot), SECTORS_PER_PAGE);
 	for (i = 0; i < SECTORS_PER_PAGE; i++)
 		while (!ide_is_ready());
@@ -225,6 +230,7 @@ int swap_in(struct swap_slot *slot) {
 	p->reverse_mapping = slot->reverse_mapping;
 	slot->reverse_mapping = NULL;
 
+	unlock_swapslot();
 	return 1;
 }
 
@@ -295,6 +301,11 @@ struct swap_slot *vma_lookup_swapped_page(struct vma *vma, void *va) {
 	while ((swapped != NULL) && (swapped->va != va)) {
 		swapped = swapped->next;
 	}
+
+	if (swapped == NULL) {
+		return NULL;
+	}
+
 	return swapped->slot;
 }
  
@@ -306,7 +317,7 @@ void vma_add_swapped_page(struct env *e, void *va, struct swap_slot *slot) {
 	if (vma == NULL)
 		return;
 
-	// Is THIS how we want to allocate it? Probably not, but then how?
+	// TODO: Is THIS how we want to allocate it? Probably not, but then how?
 	struct swapped_va swapped;
 	swapped.va = va;
 	swapped.slot = slot;
@@ -327,7 +338,7 @@ void vma_remove_swapped_page(struct env *e, void *va) {
 	struct swapped_va *prev = vma->swapped_pages;
 
 	// First one? Remove head
-	// Is it ok that we just let the removed structure go? No free?
+	// TODO: Is it ok that we just let the removed structure go? No free?
 	if (curr->va == va) {
 		vma->swapped_pages = curr->next;
 		return;
@@ -343,8 +354,9 @@ void vma_remove_swapped_page(struct env *e, void *va) {
 		prev = curr;
 		curr = curr->next;
 	}
-}
 
+	panic("swapped_va not in vma list\n");
+}
 
 /**
 * Initializes freepages counter. Called during boot.
@@ -517,12 +529,10 @@ void page_fault_queue_insert(uintptr_t fault_va) {
 // Pop the head of the page fault list
 // TODO: implement CLOCK
 struct page_info *page_fault_pop_head() {
-	int lock = swap_lock_pagealloc();
 	struct page_info *page;
 
 	// Page fault list is empty
 	if (page_fault_head == NULL) {
-		swap_unlock_pagealloc(lock);
 		return NULL;
 	}
 
@@ -541,7 +551,6 @@ struct page_info *page_fault_pop_head() {
 	page->fault_next = NULL;
 	page->fault_prev = NULL;
 
-	swap_unlock_pagealloc(lock);
 	return page;
 }
 
@@ -553,8 +562,6 @@ struct page_info *page_fault_pop_head() {
 * Returns 1 (success) / 0 (fail)
 */
 int swap_pages() {
-	return 0; // remove this when everything works
-
 	// Get the amount of pages to free
 	lock_nfreepages();
 	int to_free = FREEPAGE_THRESHOLD + FREEPAGE_OVERTHRESHOLD - nfreepages;
@@ -564,14 +571,18 @@ int swap_pages() {
 	struct page_info *page;
 
 	// Pop to_free times and swap out
+	int lock = swap_lock_pagealloc();
 	for (i = 0; i < to_free; i++) {
 		page = page_fault_pop_head();
 
 		// If something doesnt work, do oom killing
 		if (page == NULL || !swap_out(page)) {
+			swap_unlock_pagealloc(lock);
 			return 0;
 		}
 	}
+	swap_unlock_pagealloc(lock);
+
 	return 1;
 }
 
@@ -632,10 +643,26 @@ int oom_kill_process() {
 * Returns 1 (success) / 0 (fail)
 */
 int page_reclaim() {
+	// Remove unnecessary locks
+	int lock = 0;
+	int res = 0;
+	if (holding(&pagealloc_lock)) {
+		lock++;
+		unlock_pagealloc();
+	}
+
     // First, try to swap num pages.
     if (! swap_pages())
     	// If not successful, go for OOM killing.
-    	return oom_kill_process();
+    	res = oom_kill_process();
+    	if (lock) {
+	    	lock_pagealloc();
+	    }
+	    return res;
+
+    if (lock) {
+    	lock_pagealloc();
+    }
     return 1;
 }
 
