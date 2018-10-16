@@ -46,6 +46,9 @@ extern void isr39(void);
 extern void isr46(void);
 extern void isr51(void);
 
+extern void isr252(void);
+extern void isr253(void);
+
 static const char *int_names[256] = {
     [INT_DIVIDE] = "Divide-by-Zero Error Exception (#DE)",
     [INT_DEBUG] = "Debug (#DB)",
@@ -174,6 +177,9 @@ void idt_init(void)
     set_idt_entry(&entries[IRQ_IDE], isr46, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
     set_idt_entry(&entries[IRQ_ERROR], isr51, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
 
+    set_idt_entry(&entries[IRQ_KILL], isr252, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
+    set_idt_entry(&entries[IRQ_SUSPEND], isr253, IDT_PRESENT | IDT_PRIVL(0) | IDT_INT_GATE32, GDT_KCODE);
+
     idt_init_percpu();
 }
 
@@ -188,6 +194,15 @@ void int_dispatch(struct int_frame *frame)
     /* Handle processor exceptions. */
     /* LAB 3: your code here. */
     switch (frame->int_no) {
+
+    case IRQ_KILL:
+        lapic_eoi();
+        panic("[int_dispatch] IRQ_KILL\n");
+        sched_yield();
+    case IRQ_SUSPEND:
+        lapic_eoi();
+        panic("[int_dispatch] IRQ_SUSPEND\n");
+        sched_yield();    
     case IRQ_TIMER:
         /* Handle clock interrupts. Don't forget to acknowledge the interrupt
          * using lapic_eoi() before calling the scheduler! lab 5

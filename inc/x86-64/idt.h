@@ -30,6 +30,10 @@
 #define IRQ_IDE            46
 #define IRQ_ERROR          51
 
+/* IPI interrupt numbers */
+#define IRQ_KILL           252
+#define IRQ_SUSPEND        253
+
 /* Software interrupt. */
 #define INT_SYSCALL        128
 

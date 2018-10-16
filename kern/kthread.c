@@ -17,6 +17,8 @@
 
 #include <kern/kthread.h>
 #include <kern/sched.h>
+#include <kern/cpu.h>
+#include <kern/idt.h>
 
 struct kthread *kthreads = NULL;
 
@@ -180,6 +182,15 @@ void kthread_finish()
 void kthread_dummy() {
     cprintf("[KTHREAD_DUMMY] start\n");
     
+    struct cpuinfo *c;
+    for (c = cpus; c < cpus + ncpu; c++) {
+        cprintf("cpuid = %d\n", c->cpu_id);
+        if (c->cpu_id != thiscpu->cpu_id) {
+            // lapic_ipi(200);
+            lapic_test(c->cpu_id, IRQ_KILL);
+        }
+    }
+
     kthread_interrupt();
 
     cprintf("[KTHREAD_DUMMY] end\n");

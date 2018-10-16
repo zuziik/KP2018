@@ -216,3 +216,11 @@ void lapic_ipi(int vector)
     while (lapic[ICRLO] & DELIVS)
         ;
 }
+
+void lapic_test(uint8_t apicid, int arg) {
+    cprintf("test\n");
+    lapicw(ICRHI, apicid << 24);
+    lapicw(ICRLO, arg);
+    while (lapic[ICRLO] & DELIVS)
+        ;
+}
