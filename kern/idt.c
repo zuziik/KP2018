@@ -361,7 +361,6 @@ void page_fault_handler(struct int_frame *frame)
     cprintf("[%08x] user fault va %p ip %p\n",
         curenv->env_id, fault_va, frame->rip);
     print_int_frame(frame);
-    cprintf("[INT_FAULT_HANDLER] start destroying\n");
     env_destroy(curenv);
 }
 
@@ -434,14 +433,10 @@ int page_fault_load_page(void *fault_va_aligned) {
     struct page_info *page;
     struct swap_slot *slot;
 
-    cprintf("[page_fault_load_page] 1\n");
-
     // Get vma associated with faulting virt addr
     vma = vma_lookup(curenv, (void *)fault_va_aligned);
     if (vma == NULL)
         return 0;
-    
-    cprintf("[page_fault_load_page] 2\n");
 
     // If the page is swapped out, swap it back in
     slot = vma_lookup_swapped_page(vma, fault_va_aligned);
@@ -450,19 +445,13 @@ int page_fault_load_page(void *fault_va_aligned) {
         return 1;
     }
 
-    cprintf("[page_fault_load_page] 3\n");
-
     // There is a vma associated with this virt addr, now alloc the physical page
     page = page_alloc(ALLOC_ZERO);
     if (page == NULL)
         panic("Page fault error - couldn't allocate new page\n");
-
-    cprintf("[page_fault_load_page] 4\n");
     
     if (page_insert(curenv->env_pml4, page, (void *) fault_va_aligned, vma->perm) != 0)
         panic("Page fault error - couldn't map new page\n");
-
-    cprintf("[page_fault_load_page] 5\n");
     
     // Copy the binary from kernel space to user space, for anonymous memory nothing more has to be done
     if (vma->type == VMA_BINARY) {
@@ -508,12 +497,7 @@ int page_fault_load_page(void *fault_va_aligned) {
         memcpy((void *) va_dst_start, (void *) va_src_start, copy_size);
     }
 
-    cprintf("[page_fault_load_page] 6\n");
-
     /* LAB 7 add reverse mapping */
     add_reverse_mapping(curenv, fault_va_aligned, page, vma->perm);
-
-    cprintf("[page_fault_load_page] 7\n");
-
     return 1;
 }

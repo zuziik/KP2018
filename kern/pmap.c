@@ -154,7 +154,6 @@ void mem_init(struct boot_info *boot_info)
         pages[i].is_available = 0;
         pages[i].fault_next = NULL;
         pages[i].fault_prev = NULL;
-        // pages[i].ptes = NULL;
     }
 
     /*********************************************************************
@@ -179,23 +178,14 @@ void mem_init(struct boot_info *boot_info)
         envs[i].vma_array = vma_list;
     }
 
-    //----------------------------------------------------------------------------------------
+    //--------------------------------------------------------------------
     // Alloc memory for kthread_frame for each kthread
     // Use page guards to protect from overflowing
-    //----------------------------------------------------------------------------------------
+    //--------------------------------------------------------------------
     for (i = 0; i < MAX_KTHREADS; i++) {
         kthreads[i].top = boot_alloc(KTHREAD_STACK_SIZE);
         kthreads[i].start_rbp = (int64_t) kthreads[i].top;
     }
-
-    /*********************************************************************
-     * Alloc page_faults array to save all the page faults in
-     * for page reclaiming.
-     * Max is npages since you cant have more unique page faults
-     * for missing physical pages than the max amount of physical pages
-     */
-    // page_faults = boot_alloc(sizeof(struct page_fault) * npages);
-
 
     /*********************************************************************
      * Now that we've allocated the initial kernel data structures, we set
@@ -265,42 +255,6 @@ void mem_init(struct boot_info *boot_info)
             page_walk(kern_pml4, (void *)vi, CREATE_NORMAL);
         }
     }
-
-   // Map page_faults list RW | None
-    // boot_map_region(kern_pml4, PAGE_FAULTS_, 
-    //     ROUNDUP(npages * sizeof(struct page_fault), PAGE_SIZE),
-    //     PADDR(page_faults), PAGE_WRITE | PAGE_NO_EXEC);
-
-
-    /*********************************************************************
-     * Use the physical memory that 'bootstack' refers to as the kernel
-     * stack. The kernel stack grows down from virtual address KSTACK_TOP.
-     * We consider the entire range from [KSTACK_TOP-PTSIZE, KSTACK_TOP)
-     * to be the kernel stack, but break this into two pieces:
-     *     * [KSTACK_TOP-KSTACK_SIZE, KSTACK_TOP) -- backed by physical memory
-     *     * [KSTACK_TOP-PTSIZE, KSTACK_TOP-KSTACK_SIZE) -- not backed; so if
-     *       the kernel overflows its stack, it will fault rather than
-     *       overwrite memory.  Known as a "guard page".
-     *     Permissions: kernel RW, user NONE
-     *
-     * Note: don't map anything between KSTACKTOP - PTSIZE and
-     * KSTACKTOP - KTSIZE leaving this as guard region.
-     *
-     * Your code goes here:
-     *
-     *
-     * LAB 6 Update:
-     * We now move to initializing kernel stacks in mem_init_mp().
-     * So, we must remove this bootstack initialization from here.
-     */
-    // uintptr_t vi;
-    // boot_map_region(kern_pml4, KSTACK_TOP-KSTACK_SIZE, KSTACK_SIZE, 
-    //                 (physaddr_t)bootstack, PAGE_WRITE | PAGE_NO_EXEC);
-
-    // for (vi = KSTACK_TOP-KSTACK_SIZE-KSTACK_GAP; vi < KSTACK_TOP-KSTACK_SIZE; 
-    //      vi += PAGE_SIZE) {
-    //     page_walk(kern_pml4, (void *)vi, CREATE_NORMAL);
-    // }
 
     /*********************************************************************
      * Map all of physical memory at KERNBASE.

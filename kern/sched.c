@@ -108,8 +108,6 @@ void sched_yield(void)
         }
     }
 
-    cprintf("[SCHED_YIELD] Thread timeslices updated\n");
-
     // Try to schedule a kthread
     for (j = 0; j < MAX_KTHREADS; j++) {
         if (kthreads[j].kt_id != -1 && kthreads[j].timeslice < 0 && kthreads[j].kt_status == ENV_RUNNABLE) {
@@ -118,8 +116,6 @@ void sched_yield(void)
             break;
         }
     }
-
-    cprintf("[SCHED_YIELD] Not running any kthreads\n");
 
     /*
      * Implement simple round-robin scheduling.

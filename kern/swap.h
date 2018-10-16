@@ -33,13 +33,6 @@ struct mapping *mappings;				/* Array of all allocated mapping structures */
 struct mapping *free_mappings;			/* Linked list of allocated but unused mapping structures*/
 
 
-// Struct(s) used to save faulting page faults
-// extern struct page_fault *page_faults;
-// struct page_fault {
-// 	physaddr_t page_addr;
-// 	physaddr_t pte_addr;
-// };
-
 // For each PAGE_SIZE/SECTSIZE sectors on disk (aligned)
 struct swap_slot {
 	uint8_t is_used;

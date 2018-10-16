@@ -288,42 +288,6 @@ int env_alloc(struct env **newenv_store, envid_t parent_id)
 }
 
 /*
- * Allocate len bytes of physical memory for environment env, and map it at
- * virtual address va in the environment's address space.
- * Does not zero or otherwise initialize the mapped pages in any way.
- * Pages should be writable by user and kernel.
- * Panic if any allocation attempt fails.
- */
-// static void region_alloc(struct env *e, void *va, size_t len)
-// {
-//     /*
-//      * LAB 3: Your code here.
-//      * (But only if you need it for load_icode.)
-//      *
-//      * Hint: It is easier to use region_alloc if the caller can pass
-//      *   'va' and 'len' values that are not page-aligned.
-//      *   You should round va down, and round (va + len) up.
-//      *   (Watch out for corner-cases!)
-//      */
-
-//     cprintf("[REGION ALLOC] start\n");
-
-//     struct page_info *p = NULL;
-//     uintptr_t va_p = (uintptr_t) va;
-//     uintptr_t va_start = ROUNDDOWN(va_p, PAGE_SIZE);
-//     uintptr_t va_end = ROUNDUP(va_p + len, PAGE_SIZE);
-//     uintptr_t vi;
-
-//     for (vi = va_start; vi < va_end; vi += PAGE_SIZE) {
-//         if (!(p = page_alloc(ALLOC_ZERO)))
-//             panic("Couldn't allocate memory for environment");
-//         page_insert(e->env_pml4, p, (void *)vi, PAGE_WRITE | PAGE_USER);
-//     }
-
-//     cprintf("[REGION ALLOC] end\n");
-// }
-
-/*
  * Set up the initial program binary, stack, and processor flags for a user
  * process.
  * This function is ONLY called during kernel initialization, before running the

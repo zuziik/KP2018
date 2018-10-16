@@ -1,19 +1,14 @@
 #include <kern/swap.h>
 #include <kern/vma.h>
 
-
-// struct page_fault *page_faults = NULL;
 struct page_info *page_fault_head = NULL;
 struct page_info *page_fault_tail = NULL;
-
 
 /*
  * Initialization of swapping functionality. Prepares control
  * datastructure to keep track on changes on the disk.
  */
 void swap_init() {
-
-
     uintptr_t vi;
 	uintptr_t va_start;
     uintptr_t va_end;
@@ -22,7 +17,6 @@ void swap_init() {
     int i;
 
     //*********************************************************
-
 	// Allocating memory for swap slots datastructure
 	// (information about free/used sectors on disk)
 
@@ -338,10 +332,7 @@ void free_env_mapping_struct(struct env_mapping *env_mapping) {
  * Adds a reverse mapping to a physical page
  */
 void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int perm) {
-	cprintf("[add_reverse_mapping] 1\n");
 	struct mapping *new_mapping = alloc_mapping_struct();	
-	cprintf("[add_reverse_mapping] 2\n");
-
 	struct env_mapping *tmp_env_mapping;
 
 	new_mapping->va = va;
@@ -349,11 +340,8 @@ void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int pe
 
 	tmp_env_mapping = page->reverse_mapping;
 
-	cprintf("[add_reverse_mapping] 3\n");
 	while ((tmp_env_mapping != NULL) && (tmp_env_mapping->e != e))
 		tmp_env_mapping = tmp_env_mapping->next;
-
-	cprintf("[add_reverse_mapping] 4\n");
 
 	// Nothing is mapped for the env yet
 	if (tmp_env_mapping == NULL) {
@@ -363,11 +351,8 @@ void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int pe
 		page->reverse_mapping = tmp_env_mapping;
 	}
 
-	cprintf("[add_reverse_mapping] 5\n");
-
 	new_mapping->next = tmp_env_mapping->list;
 	tmp_env_mapping->list = new_mapping;
-	cprintf("[add_reverse_mapping] 6\n");
 }
 
 
@@ -486,7 +471,7 @@ struct swap_slot *vma_lookup_swapped_page(struct vma *vma, void *va) {
 	}
 	return swapped->slot;
 }
- 
+
 /*
  * Adds the VA and swap slot to the corresponding VMA list of swapped out pages.
  */     
