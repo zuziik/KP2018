@@ -350,9 +350,7 @@ void page_fault_handler(struct int_frame *frame)
      */
     else {
         // Page is not loaded, search in vma and map it in page tables
-        cprintf("[PAGE_FAULT_HANDLER] loading page------------------------------\n");
         if (page_fault_load_page((void *) fault_va_aligned)) {
-            cprintf("[page_fault_handler] almost loaded--------------------------\n");
             page_fault_queue_insert(fault_va_aligned);
             cprintf("[PAGE_FAULT_HANDLER] page loaded\n");
             return;
@@ -363,6 +361,7 @@ void page_fault_handler(struct int_frame *frame)
     cprintf("[%08x] user fault va %p ip %p\n",
         curenv->env_id, fault_va, frame->rip);
     print_int_frame(frame);
+    cprintf("[INT_FAULT_HANDLER] start destroying\n");
     env_destroy(curenv);
 }
 

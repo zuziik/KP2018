@@ -425,7 +425,6 @@ void remove_reverse_mapping(struct env *e, void *va, struct page_info *page) {
  * Called from env_free()
  */
 void env_remove_reverse_mappings(struct env *e) {
-	cprintf("[env_remove_reverse_mappings] start\n");
 	int i;
 
 	struct mapping *curr_mapping;
@@ -439,9 +438,6 @@ void env_remove_reverse_mappings(struct env *e) {
 			continue;
 		}
 
-		if (i > 30600) {
-			cprintf("i = %d / %d\n", i, npages);
-		}
 		curr_env_mapping = pages[i].reverse_mapping;
 		prev_env_mapping = NULL;
 
@@ -457,13 +453,11 @@ void env_remove_reverse_mappings(struct env *e) {
 
 		curr_mapping = curr_env_mapping->list;
 
-		cprintf("[1]\n");
 		while (curr_mapping != NULL) {
 			next_mapping = curr_mapping->next;
 			free_mapping_struct(curr_mapping);
+			curr_mapping = next_mapping;
 		}
-
-		cprintf("[2]\n");
 
 		// Remove env list from the page mappings
 		if (prev_env_mapping == NULL)
@@ -471,10 +465,7 @@ void env_remove_reverse_mappings(struct env *e) {
 		else
 			prev_env_mapping->next = curr_env_mapping->next;
 		    free_env_mapping_struct(curr_env_mapping);
-
-		cprintf("[3]\n");
 	}
-	cprintf("[env_remove_reverse_mappings] end\n");
 }
 
 //-----------------------------------------------------------------------------
@@ -619,6 +610,7 @@ void page_fault_remove(struct page_info *page) {
 	// Remove if tail, only use to remove from page_free
 	else if (page == page_fault_tail) {
 		page_fault_tail = page_fault_tail->fault_next;
+		page_fault_tail->fault_prev = NULL;
 		page->fault_next = NULL;
 	}
 
@@ -629,7 +621,7 @@ void page_fault_remove(struct page_info *page) {
 			page_fault_head = page->fault_prev;
 			page_fault_head->fault_next = NULL;
 			page->fault_prev = NULL;
-		} 
+		}
 		// Page is not tail, remove from middle
 		else if (page != page_fault_tail) {
 			(page->fault_next)->fault_prev = page->fault_prev;
