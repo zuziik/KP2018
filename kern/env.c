@@ -497,6 +497,7 @@ void env_free_page_tables(struct page_table *page_table, size_t depth)
  */
 void env_free(struct env *e)
 {
+    cprintf("[ENV_FREE] start\n");
     int kern = env_lock_env();
     /* If freeing the current environment, switch to kern_pgdir
      * before freeing the page directory, just in case the page
@@ -510,10 +511,16 @@ void env_free(struct env *e)
     /* Free the page tables. */
     static_assert(USER_TOP % PAGE_SIZE == 0);
 
+    cprintf("[ENV_FREE] 1\n");
+
     env_free_page_tables(e->env_pml4, 3);
     e->env_pml4 = NULL;
 
+    cprintf("[ENV_FREE] 2\n");
+
     env_remove_reverse_mappings(e);
+
+    cprintf("[ENV_FREE] 3\n");
 
     /* Return the environment to the free list */
     e->env_status = ENV_FREE;
@@ -521,6 +528,7 @@ void env_free(struct env *e)
     env_free_list = e;
 
     env_unlock_env(kern);
+    cprintf("[ENV_FREE] end\n");
 }
 
 /*
@@ -532,6 +540,8 @@ void env_destroy(struct env *e)
 {
     int kern = env_lock_env();
     assert_lock_env();
+
+    cprintf("[ENV_DESTROY] start\n");
 
     /* If e is currently running on other CPUs, we change its state to
      * ENV_DYING. A zombie environment will be freed the next time
@@ -550,6 +560,7 @@ void env_destroy(struct env *e)
         sched_yield();
     }
 
+    cprintf("[ENV_DESTROY] end\n");
     env_unlock_env(kern);
 }
 

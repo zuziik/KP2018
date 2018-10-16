@@ -87,7 +87,7 @@ struct page_info *delete_from_free(int ishuge) {
     while (cur) {
         if (cur->is_huge == ishuge) {
             break;
-        } 
+        }
         cur = cur->pp_link;
     }
 

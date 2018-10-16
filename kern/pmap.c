@@ -501,6 +501,11 @@ struct page_info *page_alloc(int alloc_flags)
     struct page_info *tmp;
     int i;
 
+    // TEMP TEST FOR ONLY 1 CPU
+    if (curenv != NULL) {
+        cprintf("avail: %d\n", available_freepages(1));
+    }
+
     // LAB 7
     // If we don't have a free page available, reclaim first
     // This only works with small pages - if we want huge pages,
@@ -508,7 +513,7 @@ struct page_info *page_alloc(int alloc_flags)
     if (!available_freepages(1)) {
         page_reclaim();
     }
-    
+
     // If out of memory, return NULL
     if (page_free_list == NULL) {
         unlock_page_lock_env(lock);
@@ -517,7 +522,7 @@ struct page_info *page_alloc(int alloc_flags)
 
     // Try to allocate a huge page
     if (alloc_flags & ALLOC_HUGE) {
-        page =  delete_from_free(1);
+        page = delete_from_free(1);
         if (page == NULL) {
             unlock_page_lock_env(lock);
             return NULL;
@@ -525,6 +530,10 @@ struct page_info *page_alloc(int alloc_flags)
     }
     // Try to allocate a small page
     else {
+        if (curenv != NULL) {
+            cprintf("still there\n");
+        }
+
         page = delete_from_free(0);
 
         // If there is no small page available,
@@ -564,6 +573,10 @@ struct page_info *page_alloc(int alloc_flags)
         }
     }
 
+    if (curenv != NULL) {
+        cprintf("not crashed yet\n");
+    }
+
     // Initialize with zeros
     if (alloc_flags & ALLOC_ZERO) {
         if (alloc_flags & ALLOC_HUGE)
@@ -576,6 +589,10 @@ struct page_info *page_alloc(int alloc_flags)
     // Update freepages counter + possibly environment counters
     if (page != NULL) {
         dec_nfreepages(alloc_flags & ALLOC_HUGE);
+    }
+
+    if (curenv != NULL) {
+        cprintf("and done\n");
     }
 
     unlock_page_lock_env(lock);

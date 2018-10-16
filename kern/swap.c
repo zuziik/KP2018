@@ -338,8 +338,9 @@ void free_env_mapping_struct(struct env_mapping *env_mapping) {
  * Adds a reverse mapping to a physical page
  */
 void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int perm) {
-
+	cprintf("[add_reverse_mapping] 1\n");
 	struct mapping *new_mapping = alloc_mapping_struct();	
+	cprintf("[add_reverse_mapping] 2\n");
 
 	struct env_mapping *tmp_env_mapping;
 
@@ -348,8 +349,11 @@ void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int pe
 
 	tmp_env_mapping = page->reverse_mapping;
 
-	while ((tmp_env_mapping->e != e) && (tmp_env_mapping != NULL))
+	cprintf("[add_reverse_mapping] 3\n");
+	while ((tmp_env_mapping != NULL) && (tmp_env_mapping->e != e))
 		tmp_env_mapping = tmp_env_mapping->next;
+
+	cprintf("[add_reverse_mapping] 4\n");
 
 	// Nothing is mapped for the env yet
 	if (tmp_env_mapping == NULL) {
@@ -359,8 +363,11 @@ void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int pe
 		page->reverse_mapping = tmp_env_mapping;
 	}
 
+	cprintf("[add_reverse_mapping] 5\n");
+
 	new_mapping->next = tmp_env_mapping->list;
 	tmp_env_mapping->list = new_mapping;
+	cprintf("[add_reverse_mapping] 6\n");
 }
 
 
@@ -418,6 +425,7 @@ void remove_reverse_mapping(struct env *e, void *va, struct page_info *page) {
  * Called from env_free()
  */
 void env_remove_reverse_mappings(struct env *e) {
+	cprintf("[env_remove_reverse_mappings] start\n");
 	int i;
 
 	struct mapping *curr_mapping;
@@ -427,6 +435,13 @@ void env_remove_reverse_mappings(struct env *e) {
 
 	// Remove mappings for each page
 	for (i = 0; i < npages; i++) {
+		if (! pages[i].is_available) { // MATTHIJS: is this good?
+			continue;
+		}
+
+		if (i > 30600) {
+			cprintf("i = %d / %d\n", i, npages);
+		}
 		curr_env_mapping = pages[i].reverse_mapping;
 		prev_env_mapping = NULL;
 
@@ -436,15 +451,19 @@ void env_remove_reverse_mappings(struct env *e) {
 			curr_env_mapping = curr_env_mapping->next;
 		}
 		// Mapping for env is not there, nothing to remove, continue with next page
-		if (curr_env_mapping == NULL)
+		if (curr_env_mapping == NULL) {
 			continue;
+		}
 
 		curr_mapping = curr_env_mapping->list;
 
+		cprintf("[1]\n");
 		while (curr_mapping != NULL) {
 			next_mapping = curr_mapping->next;
 			free_mapping_struct(curr_mapping);
 		}
+
+		cprintf("[2]\n");
 
 		// Remove env list from the page mappings
 		if (prev_env_mapping == NULL)
@@ -453,7 +472,9 @@ void env_remove_reverse_mappings(struct env *e) {
 			prev_env_mapping->next = curr_env_mapping->next;
 		    free_env_mapping_struct(curr_env_mapping);
 
+		cprintf("[3]\n");
 	}
+	cprintf("[env_remove_reverse_mappings] end\n");
 }
 
 //-----------------------------------------------------------------------------
@@ -693,6 +714,7 @@ struct page_info *page_fault_pop_head() {
  * Returns 1 (success) / 0 (fail)
  */
 int swap_out(struct page_info *p) {
+	cprintf("[SWAP_OUT] start\n");
 	// 1.Copy page on a disk
 	// Blocking now
 	// Maybe we don't want any local variables
@@ -712,9 +734,10 @@ int swap_out(struct page_info *p) {
 	}
 
 	ide_start_write(slot2sector(slot), SECTORS_PER_PAGE);
-	for (i = 0; i < SECTORS_PER_PAGE; i++)
+	for (i = 0; i < SECTORS_PER_PAGE; i++) {
 		while (!ide_is_ready());
 		ide_write_sector((char *) KADDR(page2pa(p)) + i*SECTSIZE);
+	}
 
 	// 2. Remove VMA list from page_info and map it to swap structure
 	slot->reverse_mapping = p->reverse_mapping;
@@ -756,7 +779,7 @@ int swap_out(struct page_info *p) {
  * Returns 1 (success) / 0 (fail)
 */
 int swap_in(struct swap_slot *slot) {
-
+	cprintf("[SWAP_IN] start\n");
 	int i;
 	struct env_mapping *env_mapping;
 	struct mapping *mapping;
@@ -769,9 +792,10 @@ int swap_in(struct swap_slot *slot) {
 	// 2. Copy data back from the disk
 	lock_swapslot();
 	ide_start_read(slot2sector(slot), SECTORS_PER_PAGE);
-	for (i = 0; i < SECTORS_PER_PAGE; i++)
+	for (i = 0; i < SECTORS_PER_PAGE; i++) {
 		while (!ide_is_ready());
 		ide_read_sector((char *) KADDR(page2pa(p)) + i*SECTSIZE);
+	}
 
 	// 3. Free the swap space
 	free_swap_slot(slot);
@@ -806,7 +830,7 @@ int swap_in(struct swap_slot *slot) {
  * Returns 1 (success) / 0 (fail)
  */
 int swap_pages() {
-
+	cprintf("[SWAP_PAGES] start\n");
 	// Get the amount of pages to free
 	lock_nfreepages();
 	int to_free = FREEPAGE_THRESHOLD + FREEPAGE_OVERTHRESHOLD - nfreepages;
@@ -838,6 +862,8 @@ int swap_pages() {
  * Returns 1 (success) / 0 (fail)
  */
 int page_reclaim() {
+	cprintf("[PAGE_RECLAIM] start\n");
+
 	// Remove unnecessary locks
 	int lock = 0;
 	int res = 0;
@@ -854,9 +880,10 @@ int page_reclaim() {
 	    	lock_pagealloc();
 	    }
 	    return res;
-    	if (lock) {
-    		lock_pagealloc();
-    	}
+    }
+
+    if (lock) {
+    	lock_pagealloc();
     }
     return 1;
 }
@@ -870,6 +897,7 @@ int page_reclaim() {
  */
 void kthread_swap() {
     while (1) {
+    	cprintf("[KTHREAD_SWAP] start\n");
         if (! available_freepages(FREEPAGE_THRESHOLD))
         	swap_pages();
         kthread_interrupt();

@@ -78,12 +78,12 @@ void kmain(struct boot_info *boot_info)
 #endif
 
     // Create some kernel threads
-    kthread_create(&kthread_dummy);
+    // kthread_create(&kthread_dummy);
     // kthread_create(&kthread_dummy);
     // kthread_create(&kthread_dummy);
 
     // LAB 7
-    // kthread_create(&kthread_swap);
+    kthread_create(&kthread_swap);
 
     /* The init work for all cpu's and workload is finished, give the locks back
      * The master lock will never be used again */
