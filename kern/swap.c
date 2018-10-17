@@ -144,8 +144,6 @@ void swap_init() {
  * Returns swap slot or NULL
  */
 struct swap_slot *alloc_swap_slot() {
-	cprintf("DEBUG: [ALLOC_SWAP_SLOT] start\n");
-
 	if (free_swap_slots == NULL) {
 		return NULL;
 	}
@@ -338,7 +336,6 @@ void free_env_mapping_struct(struct env_mapping *env_mapping) {
  * Adds a reverse mapping to a physical page
  */
 void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int perm) {
-	cprintf("DEBUG: [add_reverse_mapping] start\n");
 	struct mapping *new_mapping = alloc_mapping_struct();	
 
 	struct env_mapping *tmp_env_mapping;
@@ -542,7 +539,7 @@ size_t getfreepages() {
 void set_nfreepages(size_t num) {
 	lock_nfreepages();
 	nfreepages = num;
-	nfreepages = 2350; // TODO Remove
+	// nfreepages = 2350; // TODO Remove
 	unlock_nfreepages();
 }
 
@@ -646,7 +643,6 @@ void page_fault_queue_insert(uintptr_t fault_va) {
 	struct page_info *page;
 	physaddr_t *pt_entry = NULL;
 	page = page_lookup(curenv->env_pml4, (void *) fault_va, &pt_entry);
-	cprintf("DEBUG: inserting page: %llx, va: %llx to page fault queue\n", page2pa(page), fault_va);
 
 	// Corner cases: empty list
 	if (page_fault_head == NULL && page_fault_tail == NULL) {
@@ -705,7 +701,6 @@ struct page_info *page_fault_pop_head() {
  * Returns 1 (success) / 0 (fail)
  */
 int swap_out(struct page_info *p) {
-	cprintf("DEBUG: [SWAP_OUT] start\n");
 	// 1.Copy page on a disk
 	// Blocking now
 	// Maybe we don't want any local variables
@@ -723,8 +718,6 @@ int swap_out(struct page_info *p) {
 		unlock_swapslot();
 		return 0;
 	}
-
-	cprintf("DEBUG: swap slot: %llx, sector number: %d\n", &slot, slot2sector(slot));
 	
 	ide_start_write(slot2sector(slot), SECTORS_PER_PAGE);
 	for (i = 0; i < SECTORS_PER_PAGE; i++) {
@@ -743,14 +736,9 @@ int swap_out(struct page_info *p) {
 	// 4. Add the slot to every VMA swapped_pages list
 	env_mapping = slot->reverse_mapping;
 	
-	if (env_mapping == NULL)
-		cprintf("DEBUG: no reverse mappings?\n");
-
-
 	while (env_mapping != NULL) {
 		mapping = env_mapping->list;
 		while (mapping != NULL) {
-			cprintf("DEBUG: mapping from e: %llx, va: %llx\n", env_mapping->e->env_id, mapping->va);
 			// TODO Problem with invalidating TLB cache, see tlb_invalidate() implementation
 			page_remove(env_mapping->e->env_pml4, mapping->va);
 			vma_add_swapped_page(env_mapping->e, mapping->va, slot);
@@ -801,14 +789,15 @@ int swap_in(struct swap_slot *slot) {
 	// 3. Free the swap space
 	free_swap_slot(slot);
 
+
 	// 4. Walk the saved reverse mappings and map the page everywhere
 	// it was mapped before + increase the refcount with each mapping
 	// 5. Remove the slot from swapped_pages list of each VMA
 	env_mapping = slot->reverse_mapping;
 	while (env_mapping != NULL) {
 		mapping = env_mapping->list;
-			while (mapping != NULL) {
-			page_insert(env_mapping->e->env_pml4, mapping->va, p, mapping->perm);
+		while (mapping != NULL) {
+			page_insert(env_mapping->e->env_pml4, p, mapping->va, mapping->perm);
 			vma_remove_swapped_page(env_mapping->e, mapping->va);
 			mapping = mapping->next;
 		}
@@ -831,30 +820,23 @@ int swap_in(struct swap_slot *slot) {
  * Returns 1 (success) / 0 (fail)
  */
 int swap_pages() {
-	cprintf("DEBUG: [SWAP_PAGES] start\n");
 	// Get the amount of pages to free
 	lock_nfreepages();
-	cprintf("DEBUG: 2\n");
 	int to_free = FREEPAGE_THRESHOLD + FREEPAGE_OVERTHRESHOLD - nfreepages;
 	unlock_nfreepages();
 
 	int i;
 	struct page_info *page;
 
-	cprintf("DEBUG: 3\n");
-
 	// Pop to_free times and swap out
 	int lock = swap_lock_pagealloc();
 	for (i = 0; i < to_free; i++) {
+		cprintf("START_i: %d / %d\n", i, to_free);
 		page = page_fault_pop_head();
-
-		if (page != NULL)
-			cprintf("DEBUG: going to swap out page: %llx\n", page2pa(page));
-		else
-			cprintf("DEBUG: no page in the queue to swap out\n", page2pa(page));
 
 		// If something doesnt work, do oom killing
 		if (page == NULL || !swap_out(page)) {
+			cprintf("START_SWAP_PAGES_CRASH\n");
 			swap_unlock_pagealloc(lock);
 			return 0;
 		}
@@ -871,8 +853,6 @@ int swap_pages() {
  * Returns 1 (success) / 0 (fail)
  */
 int page_reclaim() {
-	cprintf("DEBUG: [PAGE_RECLAIM] start\n");
-
 	// Remove unnecessary locks
 	int lock = 0;
 	int res = 0;
@@ -881,10 +861,10 @@ int page_reclaim() {
 		unlock_pagealloc();
 	}
 
-	cprintf("DEBUG: 1\n");
-
+	cprintf("START_SWAP_PAGES\n");
     // First, try to swap num pages.
     if (! swap_pages()) {
+    	cprintf("START_OOM_KILLING\n");
     	// If not successful, go for OOM killing.
     	res = oom_kill_process();
     	if (lock) {

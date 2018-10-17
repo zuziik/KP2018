@@ -198,19 +198,17 @@ void int_dispatch(struct int_frame *frame)
     case IRQ_KILL:
         // OOM killer wants to kill this env
         lapic_eoi();
-        cprintf("%llx | %d\n", frame->err_code, frame->err_code);
-        cprintf("%llx | %d\n", frame->err_code & 100, frame->err_code & 100);
         panic("[int_dispatch] IRQ_KILL\n");
     case IRQ_SUSPEND:
         lapic_eoi();
         panic("[int_dispatch] IRQ_SUSPEND\n");
-        sched_yield();    
+        sched_yield();
     case IRQ_TIMER:
         /* Handle clock interrupts. Don't forget to acknowledge the interrupt
          * using lapic_eoi() before calling the scheduler! lab 5
          */
         lapic_eoi();
-        cprintf("[int_dispatch] TIMED_INTERRUPT\n");
+        // cprintf("[int_dispatch] TIMED_INTERRUPT\n");
         sched_yield();
         break;
     case IRQ_SPURIOUS:
@@ -306,7 +304,7 @@ void int_handler(struct int_frame *frame)
 
 void page_fault_handler(struct int_frame *frame)
 {
-    cprintf("[PAGE FAULT HANDLER] start\n");
+    // cprintf("[PAGE FAULT HANDLER] start\n");
     int is_user = (frame->err_code & 4) == 4;           // User or kernel space
     int is_protection = (frame->err_code & 1) == 1;     // Protection or non-present page
     void *fault_va;
@@ -337,10 +335,10 @@ void page_fault_handler(struct int_frame *frame)
     else if (!is_user) {
         // Kernel tries to read user space, load user space page
         if (fault_va_aligned < KERNEL_VMA) {
-            cprintf("[PAGE_FAULT_HANDLER] kernel tries to read user space, loading page\n");
+            // cprintf("[PAGE_FAULT_HANDLER] kernel tries to read user space, loading page\n");
             if (page_fault_load_page((void *) fault_va_aligned)) {
                 page_fault_queue_insert(fault_va_aligned);
-                cprintf("[PAGE_FAULT_HANDLER] page loaded\n");
+                // cprintf("[PAGE_FAULT_HANDLER] page loaded\n");
                 return;
             }
         } else {
@@ -354,7 +352,7 @@ void page_fault_handler(struct int_frame *frame)
         // Page is not loaded, search in vma and map it in page tables
         if (page_fault_load_page((void *) fault_va_aligned)) {
             page_fault_queue_insert(fault_va_aligned);
-            cprintf("[PAGE_FAULT_HANDLER] page loaded\n");
+            // cprintf("[PAGE_FAULT_HANDLER] page loaded\n");
             return;
         }
     }

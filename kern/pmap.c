@@ -294,6 +294,21 @@ void mem_init(struct boot_info *boot_info)
 
     // 0x10.... == 2^32 bit, theoretical max size of memory
     boot_map_region(kern_pml4, KERNEL_VMA, 0x100000000, 0, PAGE_WRITE);
+
+    struct page_info *tmp = page_free_list;
+    int count = 0;
+    while (tmp != NULL) {
+        if (tmp->is_huge) {
+            count += SMALL_PAGES_IN_HUGE;
+        } else {
+            count += 1;
+        }
+        tmp = tmp->pp_link;
+    }
+    cprintf("COUNT      = %d\n", count);
+    cprintf("nfreepages = %d\n", nfreepages);
+    set_nfreepages(count);
+
     cprintf("[MEM_INIT] END\n");
 }
 
@@ -455,30 +470,18 @@ struct page_info *page_alloc(int alloc_flags)
     struct page_info *tmp;
     int i;
 
-    // TEMP TEST FOR ONLY 1 CPU
-    if (curenv != NULL) {
-        // cprintf("avail: %d\n", available_freepages(1));
-        cprintf("DEBUG: avail: %d\n", getfreepages());
-    }
-
-    // TEMPORARY START
-    // if (getfreepages() == 29000) {
-    //     unlock_page_lock_env(lock);
-    //     page_reclaim();
-    // }
-    // TEMPORARY END
-
-
     // LAB 7
     // If we don't have a free page available, reclaim first
     // This only works with small pages - if we want huge pages,
     // it won't be so easy -- discussion needed
     if (!available_freepages(1)) {
+        cprintf("START_RECLAIM\n");
         page_reclaim();
     }
 
     // If out of memory, return NULL
     if (page_free_list == NULL) {
+        cprintf("START_PAGE_ALLOC_ERROR: nfreepages = %d\n", nfreepages);
         unlock_page_lock_env(lock);
         return NULL;
     }
@@ -493,10 +496,6 @@ struct page_info *page_alloc(int alloc_flags)
     }
     // Try to allocate a small page
     else {
-        if (curenv != NULL) {
-            cprintf("still there\n");
-        }
-
         page = delete_from_free(0);
 
         // If there is no small page available,
@@ -536,10 +535,6 @@ struct page_info *page_alloc(int alloc_flags)
         }
     }
 
-    if (curenv != NULL) {
-        cprintf("not crashed yet\n");
-    }
-
     // Initialize with zeros
     if (alloc_flags & ALLOC_ZERO) {
         if (alloc_flags & ALLOC_HUGE)
@@ -552,10 +547,6 @@ struct page_info *page_alloc(int alloc_flags)
     // Update freepages counter + possibly environment counters
     if (page != NULL) {
         dec_nfreepages(alloc_flags & ALLOC_HUGE);
-    }
-
-    if (curenv != NULL) {
-        cprintf("and done\n");
     }
 
     unlock_page_lock_env(lock);
@@ -978,9 +969,7 @@ void tlb_invalidate(struct page_table *pml4, void *va)
     int lock = lock_page_unlock_env();
 
     /* Flush the entry only if we're modifying the current address space. */
-    // cprintf("curent: %llx\n", curenv);
     if ((!curenv) || (curenv->env_pml4 == pml4)) {
-        cprintf("[PAGE_FAULT_HANDLER] -> flushing page\n");
         flush_page(va);
     }
 

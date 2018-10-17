@@ -40,7 +40,7 @@ void reset_pause(envid_t env_id) {
  */
 void sched_yield(void)
 {
-    cprintf("[SCHED_YIELD] start\n");
+    // cprintf("[SCHED_YIELD] start\n");
     if (!holding(&env_lock)) {
         lock_env();
     }
@@ -52,18 +52,18 @@ void sched_yield(void)
 
     // First time running something on this cpu
     if (curenv == NULL) {
-        cprintf("[1]\n");
+        // cprintf("[1]\n");
         curenv_i = 0;
     }
     // Curenv was just destroyed
     else if (curenv->env_status == ENV_FREE) {
-        cprintf("[2]\n");
+        // cprintf("[2]\n");
         curenv_i = get_env_index(curenv->env_id);
         curenv = NULL;
     }
     // Curenv just ran, check if its timeslice is done, else keep running it
     else if (curenv->env_status == ENV_RUNNING && curenv->env_cpunum == cpunum()) {
-        cprintf("[3]\n");
+        // cprintf("[3]\n");
         curenv_i = get_env_index(curenv->env_id);
 
         // Update timeslice of curenv
@@ -80,7 +80,7 @@ void sched_yield(void)
 
             // If env is still running and timeslice is not 0, continue executing
             if (curenv->env_status == ENV_RUNNING && curenv->pause < 0) {
-                cprintf("[SCHED_YIELD] curenv resume\n");
+                // cprintf("[SCHED_YIELD] curenv resume\n");
                 env_run(curenv);
             }
         }
@@ -91,7 +91,7 @@ void sched_yield(void)
     }
     // A kernel thread just ran, curenv is the last env that ran before the kthread
     else {
-        cprintf("[4]\n");
+        // cprintf("[4]\n");
         curenv_i = get_env_index(curenv->env_id);
     }
 
@@ -111,7 +111,7 @@ void sched_yield(void)
     // Try to schedule a kthread
     for (j = 0; j < MAX_KTHREADS; j++) {
         if (kthreads[j].kt_id != -1 && kthreads[j].timeslice < 0 && kthreads[j].kt_status == ENV_RUNNABLE) {
-            cprintf("[SCHED_YIELD] kthread\n");
+            // cprintf("[SCHED_YIELD] kthread\n");
             kthread_run(&kthreads[j]);
             break;
         }
@@ -158,13 +158,13 @@ void sched_yield(void)
     //            curenv so check if its still assigned to your cpu
     else if (i == curenv_i && curenv != NULL && curenv->pause < 0 &&
              ((curenv->env_status == ENV_RUNNING && curenv->env_cpunum == cpunum()) || curenv->env_status == ENV_RUNNABLE)) {
-        cprintf("[SCHED_YIELD] curenv new\n");
+        // cprintf("[SCHED_YIELD] curenv new\n");
         env = curenv;
     }
 
     // Run the env
     if (env != NULL) {
-        cprintf("[SCHED_YIELD] new\n");
+        // cprintf("[SCHED_YIELD] new\n");
         env->timeslice = MAXTIMESLICE;
         env->prev_time = time;
         env_run(env);

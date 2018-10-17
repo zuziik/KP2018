@@ -570,7 +570,7 @@ void env_run(struct env *e)
      */
 
     /* LAB 3: your code here. */
-    cprintf("[ENV_RUN] start\n");
+    // cprintf("[ENV_RUN] start\n");
 
     int lock = env_lock_env();
 
