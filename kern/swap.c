@@ -1,7 +1,6 @@
 #include <kern/swap.h>
 #include <kern/vma.h>
 
-
 struct page_info *page_fault_head = NULL;
 struct page_info *page_fault_tail = NULL;
 
@@ -528,18 +527,12 @@ void vma_remove_swapped_page(struct env *e, void *va) {
 // Keeping track of total number of free pages in memory
 //-----------------------------------------------------------------------------
 
-size_t getfreepages() {
-	return nfreepages;
-}
-
-
 /*
  * Initializes freepages counter. Called during boot.
  */
 void set_nfreepages(size_t num) {
 	lock_nfreepages();
 	nfreepages = num;
-	// nfreepages = 2350; // TODO Remove
 	unlock_nfreepages();
 }
 
@@ -674,7 +667,8 @@ struct page_info *page_fault_pop_head() {
 	// Page fault list is empty
 	if (page_fault_head == NULL) {
 		return NULL;
-	} 
+	}
+
 	// Only 1 element in the list
 	else if (page_fault_head == page_fault_tail) {
 		page_fault_head = NULL;
@@ -683,7 +677,7 @@ struct page_info *page_fault_pop_head() {
 	}
 
 	// CLOCK: search for head with no second chance
-	// List is garanteed > 1
+	// List is guaranteed > 1
 	while (1) {
 		page = page_fault_head;
 		page_fault_head = page_fault_head->fault_prev;
@@ -723,6 +717,10 @@ int swap_out(struct page_info *p) {
 	struct swap_slot *slot;
 	struct env_mapping *env_mapping;
 	struct mapping *mapping;
+	struct cpuinfo *c;
+
+	int kern = env_lock_env();
+    assert_lock_env();
 
 	lock_swapslot();
 	slot = alloc_swap_slot();
@@ -730,6 +728,7 @@ int swap_out(struct page_info *p) {
 	// No swap space available, return fail
 	if (slot == NULL) {
 		unlock_swapslot();
+		env_unlock_env(kern);
 		return 0;
 	}
 	
@@ -739,8 +738,6 @@ int swap_out(struct page_info *p) {
 		ide_write_sector((char *) KADDR(page2pa(p)) + i*SECTSIZE);
 	}
 
-	// ZUZANA all fine until here
-
 	// 2. Remove VMA list from page_info and map it to swap structure
 	slot->reverse_mapping = p->reverse_mapping;
 	p->reverse_mapping = NULL;
@@ -748,29 +745,28 @@ int swap_out(struct page_info *p) {
 	// 3. Zero-out all entries pointing to this physical page and
 	// decrease reference count on the page
 	// 4. Add the slot to every VMA swapped_pages list
+	// 5. The page should be freed automatically since we remove all references
 	env_mapping = slot->reverse_mapping;
 	
 	while (env_mapping != NULL) {
 		mapping = env_mapping->list;
 		while (mapping != NULL) {
-			// TODO Problem with invalidating TLB cache, see tlb_invalidate() implementation
+			// LAB 7 - for 
 			page_remove(env_mapping->e->env_pml4, mapping->va);
 			vma_add_swapped_page(env_mapping->e, mapping->va, slot);
 			mapping = mapping->next;
 		}
+		// "Flush TLB" for the environment if it's not running at the our CPU
+		// (sends IPI that calls a scheduler which should flush TLB automatically)
+		if ((env_mapping->e->env_status == ENV_RUNNING) && (env_mapping->e != curenv)) {
+			c = &cpus[process_to_kill->env_cpunum];
+    		lapic_ipi_target(c->cpu_id, IRQ_SUSPEND);	
+		}
 		env_mapping = env_mapping->next;
 	}
 
-	// 5. Free the physical page -- this should be done automatically because we call page_remove
-	// on all mappings
-
-	// if (p->pp_ref != 0) {
-	// 	panic("[SWAP_OUT] Didn't remove all the mappings to the swapped out page");
-	// }
-	// p->pp_ref = 1;
-	// page_decref(p);
-
 	unlock_swapslot();
+	env_unlock_env(kern);
 	return 1;
 }
 
@@ -834,6 +830,7 @@ int swap_in(struct swap_slot *slot) {
  * Returns 1 (success) / 0 (fail)
  */
 int swap_pages() {
+
 	// Get the amount of pages to free
 	lock_nfreepages();
 	int to_free = FREEPAGE_THRESHOLD + FREEPAGE_OVERTHRESHOLD - nfreepages;
@@ -868,6 +865,8 @@ int swap_pages() {
  */
 int page_reclaim() {
 	// Remove unnecessary locks
+	cprintf("DEBUG: [PAGE_RECLAIM] start\n");
+
 	int lock = 0;
 	int res = 0;
 	if (holding(&pagealloc_lock)) {
@@ -1012,46 +1011,52 @@ uint32_t count_table_pages(struct env* e) {
  * Returns 1 (success) / 0 (fail)
  */
 int oom_kill_process() {
-	process_to_kill = -1;	
+	process_to_kill = NULL;	
 
     // Walk envs list and compute RSS for each process based on the stats 
     // stored there. Choose the process with the highest score.
 	lock_env();
     for (counter = 0; counter < NENV; counter++) {
+    	if (envs[counter].env_status == ENV_FREE)
+    		continue;
     	current_rss = (count_allocated_pages(&envs[counter]) 
     		+ count_swapped_pages(&envs[counter]) 
     		+ count_table_pages(&envs[counter])
     		) / PAGE_SIZE + npages/1000;
-    	cprintf("OOM process %llx, alloc %d, score %d\n", envs[counter].env_id, current_rss);
+    	cprintf("DEBUG: OOM process %llx, alloc %d, swap %d, table %d, score %d\n", envs[counter].env_id, count_allocated_pages(&envs[counter]), count_swapped_pages(&envs[counter]), count_table_pages(&envs[counter]), current_rss);
     	if (current_rss > highest_rss) {
     		highest_rss = current_rss;
-    		process_to_kill = envs[counter].env_id;
+    		process_to_kill = &envs[counter];
     	}
     }
-    unlock_env();
 
-    if (process_to_kill == -1) {
-    	panic("OOM killer - No processes to kill!");
+    if (process_to_kill == NULL) {
+    	unlock_env();
+    	return 0;
     }
 
-    cprintf("OOM wants to kill %llx\n", process_to_kill);
+    // Kill the process
+    cprintf("OOM wants to kill %llx\n", process_to_kill->env_id);
 
-    // Kill the process = Send an interrupt to the core the process is
-    // running at. The cpu will then destroy the process.
-    // !!! Don't check whether it's running first, it has to be atomic.
-    // If the process is not running, the CPU will simply ignore the interrupt
-    // (because it will do the kernel work so IF will be cleared) so it will
-    // work anyway. If we first checked whether the process is running, it
-    // maybe won't but it can be rescheduled before we kill it.
+    // Not running - can destroy immediately. It is another process so we don't
+    // want to go back to the scheduler but serve the page_alloc that triggered
+    // the OOM killer.
+    if (process_to_kill->env_status != ENV_RUNNING) {
+    	env_destroy(process_to_kill);
+    }
+    // If it's on this processor, destroy the current environment and go back to
+    // the scheduler - no need to serve the page_alloc for an environment we just
+    // destroyed
+    else if (process_to_kill == curenv) {
+    	env_destroy(process_to_kill);
+    }
+    // It's on another core, send IPI to destroy whatever is running there. We
+    // we will return to the page_alloc().
+    else {
+    	struct cpuinfo *c = &cpus[process_to_kill->env_cpunum];
+    	lapic_ipi_target(c->cpu_id, IRQ_KILL);
+    }
 
-    // Problem - we don't clear env_cpunum field after a process is interrupted,
-    // so it's not consistent.
-
-    // Another problem - process can be rescheduled to another core after we read
-    // env_cpunum but BEFORE we send an interrupt to the core to destroy it.
-    // Can we use the env lock even in the scheduler? That way this wouldn't
-    // be a problem.
-
-    // Matthijs, do you know how to send a IPI?
-    return 0;
+    unlock_env();
+    return 1;
 }

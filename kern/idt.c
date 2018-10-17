@@ -198,10 +198,11 @@ void int_dispatch(struct int_frame *frame)
     case IRQ_KILL:
         // OOM killer wants to kill this env
         lapic_eoi();
-        panic("[int_dispatch] IRQ_KILL\n");
+        cprintf("Received IRQ kill signal, killing the current environment\n");
+        env_destroy(curenv);
     case IRQ_SUSPEND:
         lapic_eoi();
-        panic("[int_dispatch] IRQ_SUSPEND\n");
+        cprintf("Received IRQ suspend signal, suspending the current environment\n");
         sched_yield();
     case IRQ_TIMER:
         /* Handle clock interrupts. Don't forget to acknowledge the interrupt
