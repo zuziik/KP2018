@@ -5,7 +5,7 @@
 // LAB 7
 size_t nfreepages;                       /* Total number of free pags in memory,
                                         updated with each alloc/free */
-envid_t process_to_kill;
+struct env *process_to_kill;
 size_t highest_rss;
 size_t current_rss;
 int counter;
@@ -75,8 +75,6 @@ int swap_out(struct page_info *p);
 void set_nfreepages(size_t num);
 void inc_nfreepages(int huge);
 void dec_nfreepages(int huge);
-
-size_t getfreepages(); //TODO remove
 
 int available_freepages(size_t num);
 void page_fault_remove(struct page_info *page);

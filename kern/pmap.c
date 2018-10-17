@@ -145,6 +145,7 @@ void mem_init(struct boot_info *boot_info)
      * 'npages' is the number of physical pages in memory.  Your code goes here.
      */
     pages = boot_alloc(sizeof(struct page_info)*npages);
+
     for (i = 0; i < npages; i++) {
         pages[i].pp_link = NULL;
         pages[i].previous = NULL;
@@ -159,6 +160,7 @@ void mem_init(struct boot_info *boot_info)
      * Allocate 'kthreads', list of all kernel threads
      */
     kthreads = boot_alloc(sizeof(struct kthread) * MAX_KTHREADS);
+
     // kthreads with id -1 are not used / not allocated
     for (i = 0; i < MAX_KTHREADS; i++) {
         kthreads[i].kt_id = -1;
@@ -170,6 +172,7 @@ void mem_init(struct boot_info *boot_info)
      * LAB 3: your code here.
      */
     envs = boot_alloc(sizeof(struct env) * NENV);
+
     for (i = 0; i < NENV; i++) {
         vma_list = boot_alloc(sizeof(struct vma)*MAX_VMAS);
         envs[i].vma_array = vma_list;
@@ -183,6 +186,7 @@ void mem_init(struct boot_info *boot_info)
         kthreads[i].top = boot_alloc(KTHREAD_STACK_SIZE);
         kthreads[i].start_rbp = (int64_t) kthreads[i].top;
     }
+
     /*********************************************************************
      * Now that we've allocated the initial kernel data structures, we set
      * up the list of free physical pages. Once we've done so, all further
@@ -302,6 +306,7 @@ void mem_init(struct boot_info *boot_info)
         }
         tmp = tmp->pp_link;
     }
+
     set_nfreepages(count);
 
     cprintf("[MEM_INIT] END\n");
@@ -469,9 +474,11 @@ struct page_info *page_alloc(int alloc_flags)
     // If we don't have a free page available, reclaim first
     // This only works with small pages - if we want huge pages,
     // it won't be so easy -- discussion needed
+
     if (!available_freepages(1)) {
-        cprintf("START_RECLAIM\n");
-        page_reclaim();
+        cprintf("DEBUG: START_RECLAIM\n");
+        if (!page_reclaim())
+            panic("Out-of-memory, swapping and OOM killing failed!");
     }
 
     // If out of memory, return NULL
