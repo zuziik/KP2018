@@ -178,10 +178,10 @@ void mem_init(struct boot_info *boot_info)
         envs[i].vma_array = vma_list;
     }
 
-    //--------------------------------------------------------------------
+    //-------------------------------------------------------------------------
     // Alloc memory for kthread_frame for each kthread
     // Use page guards to protect from overflowing
-    //--------------------------------------------------------------------
+    //-------------------------------------------------------------------------
     for (i = 0; i < MAX_KTHREADS; i++) {
         kthreads[i].top = boot_alloc(KTHREAD_STACK_SIZE);
         kthreads[i].start_rbp = (int64_t) kthreads[i].top;
@@ -457,8 +457,17 @@ struct page_info *page_alloc(int alloc_flags)
 
     // TEMP TEST FOR ONLY 1 CPU
     if (curenv != NULL) {
-        cprintf("avail: %d\n", available_freepages(1));
+        // cprintf("avail: %d\n", available_freepages(1));
+        cprintf("DEBUG: avail: %d\n", getfreepages());
     }
+
+    // TEMPORARY START
+    // if (getfreepages() == 29000) {
+    //     unlock_page_lock_env(lock);
+    //     page_reclaim();
+    // }
+    // TEMPORARY END
+
 
     // LAB 7
     // If we don't have a free page available, reclaim first
