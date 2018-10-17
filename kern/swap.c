@@ -1,8 +1,10 @@
 #include <kern/swap.h>
 #include <kern/vma.h>
 
+
 struct page_info *page_fault_head = NULL;
 struct page_info *page_fault_tail = NULL;
+
 
 /*
  * Initialization of swapping functionality. Prepares control
@@ -17,11 +19,12 @@ void swap_init() {
     int i;
 
     //*********************************************************
+
 	// Allocating memory for swap slots datastructure
 	// (information about free/used sectors on disk)
 
 	nswapslots = ide_num_sectors() / (PAGE_SIZE/SECTSIZE);
-	cprintf("[SWAP INIT] We can fit %d pages on swap disk\n", nswapslots);
+	cprintf("DEBUG: [SWAP INIT] We can fit %d pages on swap disk\n", nswapslots);
 
 	size = sizeof(struct swap_slot)*nswapslots;
 
@@ -39,6 +42,7 @@ void swap_init() {
     }
 
 	swap_slots = (struct swap_slot *) va_start;
+	cprintf("DEBUG: swap_slot size: %llx\n", sizeof(struct swap_slot));
 
 	// Initializing the data structure
 	for (i = 0; i < nswapslots; i++) {
@@ -64,7 +68,7 @@ void swap_init() {
 
 	npages_swapped = 1;
 	nswapped = PAGE_SIZE / sizeof(struct swapped);
-	cprintf("[SWAP] number of swapped structures: %d\n", nswapped);
+	cprintf("DEBUG: [SWAP] number of swapped structures: %d\n", nswapped);
 
 	swapped = (struct swapped *) va_start;
 
@@ -91,7 +95,7 @@ void swap_init() {
 
 	npages_mapping = 1;
 	nmappings = PAGE_SIZE / sizeof(struct mapping);
-	cprintf("[SWAP] number of mapping structures: %d\n", nmappings);
+	cprintf("DEBUG: [SWAP] number of mapping structures: %d\n", nmappings);
 
 	mappings = (struct mapping *) va_start;
 
@@ -118,7 +122,7 @@ void swap_init() {
 
 	npages_env_mapping = 1;
 	nenvmappings = PAGE_SIZE / sizeof(struct env_mapping);
-	cprintf("[SWAP] number of env_mapping structures: %d\n", nenvmappings);
+	cprintf("DEBUG: [SWAP] number of env_mapping structures: %d\n", nenvmappings);
 
 	env_mappings = (struct env_mapping *) va_start;
 
@@ -140,6 +144,8 @@ void swap_init() {
  * Returns swap slot or NULL
  */
 struct swap_slot *alloc_swap_slot() {
+	cprintf("DEBUG: [ALLOC_SWAP_SLOT] start\n");
+
 	if (free_swap_slots == NULL) {
 		return NULL;
 	}
@@ -332,7 +338,9 @@ void free_env_mapping_struct(struct env_mapping *env_mapping) {
  * Adds a reverse mapping to a physical page
  */
 void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int perm) {
+	cprintf("DEBUG: [add_reverse_mapping] start\n");
 	struct mapping *new_mapping = alloc_mapping_struct();	
+
 	struct env_mapping *tmp_env_mapping;
 
 	new_mapping->va = va;
@@ -354,7 +362,6 @@ void add_reverse_mapping(struct env *e, void *va, struct page_info *page, int pe
 	new_mapping->next = tmp_env_mapping->list;
 	tmp_env_mapping->list = new_mapping;
 }
-
 
 /*
  * Removes a reverse mapping from a physical page
@@ -471,7 +478,7 @@ struct swap_slot *vma_lookup_swapped_page(struct vma *vma, void *va) {
 	}
 	return swapped->slot;
 }
-
+ 
 /*
  * Adds the VA and swap slot to the corresponding VMA list of swapped out pages.
  */     
@@ -524,12 +531,18 @@ void vma_remove_swapped_page(struct env *e, void *va) {
 // Keeping track of total number of free pages in memory
 //-----------------------------------------------------------------------------
 
+size_t getfreepages() {
+	return nfreepages;
+}
+
+
 /*
  * Initializes freepages counter. Called during boot.
  */
 void set_nfreepages(size_t num) {
 	lock_nfreepages();
 	nfreepages = num;
+	nfreepages = 2350; // TODO Remove
 	unlock_nfreepages();
 }
 
@@ -633,6 +646,7 @@ void page_fault_queue_insert(uintptr_t fault_va) {
 	struct page_info *page;
 	physaddr_t *pt_entry = NULL;
 	page = page_lookup(curenv->env_pml4, (void *) fault_va, &pt_entry);
+	cprintf("DEBUG: inserting page: %llx, va: %llx to page fault queue\n", page2pa(page), fault_va);
 
 	// Corner cases: empty list
 	if (page_fault_head == NULL && page_fault_tail == NULL) {
@@ -691,7 +705,7 @@ struct page_info *page_fault_pop_head() {
  * Returns 1 (success) / 0 (fail)
  */
 int swap_out(struct page_info *p) {
-	cprintf("[SWAP_OUT] start\n");
+	cprintf("DEBUG: [SWAP_OUT] start\n");
 	// 1.Copy page on a disk
 	// Blocking now
 	// Maybe we don't want any local variables
@@ -710,11 +724,15 @@ int swap_out(struct page_info *p) {
 		return 0;
 	}
 
+	cprintf("DEBUG: swap slot: %llx, sector number: %d\n", &slot, slot2sector(slot));
+	
 	ide_start_write(slot2sector(slot), SECTORS_PER_PAGE);
 	for (i = 0; i < SECTORS_PER_PAGE; i++) {
 		while (!ide_is_ready());
 		ide_write_sector((char *) KADDR(page2pa(p)) + i*SECTSIZE);
 	}
+
+	// ZUZANA all fine until here
 
 	// 2. Remove VMA list from page_info and map it to swap structure
 	slot->reverse_mapping = p->reverse_mapping;
@@ -724,9 +742,15 @@ int swap_out(struct page_info *p) {
 	// decrease reference count on the page
 	// 4. Add the slot to every VMA swapped_pages list
 	env_mapping = slot->reverse_mapping;
+	
+	if (env_mapping == NULL)
+		cprintf("DEBUG: no reverse mappings?\n");
+
+
 	while (env_mapping != NULL) {
 		mapping = env_mapping->list;
 		while (mapping != NULL) {
+			cprintf("DEBUG: mapping from e: %llx, va: %llx\n", env_mapping->e->env_id, mapping->va);
 			// TODO Problem with invalidating TLB cache, see tlb_invalidate() implementation
 			page_remove(env_mapping->e->env_pml4, mapping->va);
 			vma_add_swapped_page(env_mapping->e, mapping->va, slot);
@@ -807,19 +831,27 @@ int swap_in(struct swap_slot *slot) {
  * Returns 1 (success) / 0 (fail)
  */
 int swap_pages() {
-	cprintf("[SWAP_PAGES] start\n");
+	cprintf("DEBUG: [SWAP_PAGES] start\n");
 	// Get the amount of pages to free
 	lock_nfreepages();
+	cprintf("DEBUG: 2\n");
 	int to_free = FREEPAGE_THRESHOLD + FREEPAGE_OVERTHRESHOLD - nfreepages;
-	lock_nfreepages();
+	unlock_nfreepages();
 
 	int i;
 	struct page_info *page;
+
+	cprintf("DEBUG: 3\n");
 
 	// Pop to_free times and swap out
 	int lock = swap_lock_pagealloc();
 	for (i = 0; i < to_free; i++) {
 		page = page_fault_pop_head();
+
+		if (page != NULL)
+			cprintf("DEBUG: going to swap out page: %llx\n", page2pa(page));
+		else
+			cprintf("DEBUG: no page in the queue to swap out\n", page2pa(page));
 
 		// If something doesnt work, do oom killing
 		if (page == NULL || !swap_out(page)) {
@@ -839,7 +871,7 @@ int swap_pages() {
  * Returns 1 (success) / 0 (fail)
  */
 int page_reclaim() {
-	cprintf("[PAGE_RECLAIM] start\n");
+	cprintf("DEBUG: [PAGE_RECLAIM] start\n");
 
 	// Remove unnecessary locks
 	int lock = 0;
@@ -848,6 +880,8 @@ int page_reclaim() {
 		lock++;
 		unlock_pagealloc();
 	}
+
+	cprintf("DEBUG: 1\n");
 
     // First, try to swap num pages.
     if (! swap_pages()) {

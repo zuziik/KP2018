@@ -439,7 +439,7 @@ int page_fault_load_page(void *fault_va_aligned) {
     vma = vma_lookup(curenv, (void *)fault_va_aligned);
     if (vma == NULL)
         return 0;
-
+    
     // If the page is swapped out, swap it back in
     slot = vma_lookup_swapped_page(vma, fault_va_aligned);
     if (slot != NULL) {
@@ -454,6 +454,9 @@ int page_fault_load_page(void *fault_va_aligned) {
     
     if (page_insert(curenv->env_pml4, page, (void *) fault_va_aligned, vma->perm) != 0)
         panic("Page fault error - couldn't map new page\n");
+
+    /* LAB 7 add reverse mapping */
+    add_reverse_mapping(curenv, fault_va_aligned, page, vma->perm);
     
     // Copy the binary from kernel space to user space, for anonymous memory nothing more has to be done
     if (vma->type == VMA_BINARY) {
@@ -499,7 +502,5 @@ int page_fault_load_page(void *fault_va_aligned) {
         memcpy((void *) va_dst_start, (void *) va_src_start, copy_size);
     }
 
-    /* LAB 7 add reverse mapping */
-    add_reverse_mapping(curenv, fault_va_aligned, page, vma->perm);
     return 1;
 }

@@ -32,10 +32,8 @@ uint64_t npages_mapping;				/* Current number of pages allocated for the mapping
 struct mapping *mappings;				/* Array of all allocated mapping structures */
 struct mapping *free_mappings;			/* Linked list of allocated but unused mapping structures*/
 
-
 // For each PAGE_SIZE/SECTSIZE sectors on disk (aligned)
 struct swap_slot {
-	uint8_t is_used;
 	struct env_mapping *reverse_mapping; // all VAs (per env) that used to map the physical page
 				      				   // that is now swapped out in the slot
 	struct swap_slot *prev;
@@ -78,6 +76,8 @@ void set_nfreepages(size_t num);
 void inc_nfreepages(int huge);
 void dec_nfreepages(int huge);
 
+size_t getfreepages(); //TODO remove
+
 int available_freepages(size_t num);
 void page_fault_remove(struct page_info *page);
 void page_fault_queue_insert(uintptr_t fault_va);
@@ -97,13 +97,14 @@ void env_remove_reverse_mappings(struct env *e);
 // Disk slot -> sector number on disk
 static inline uint32_t slot2sector(struct swap_slot *slot)
 {
-    return (slot - swap_slots)/sizeof(struct swap_slot) * SECTORS_PER_PAGE;
+    return (slot - swap_slots) * SECTORS_PER_PAGE;
 }
 
 // Sector number (aligned) -> disk slot
 static inline struct swap_slot *sector2slot(uint32_t secno)
 {
-    return &swap_slots[secno/SECTSIZE];
+	// ZUZANA: this should be SECTORS_PER_PAGE instead of 8 but if I change it, the result of the division is always 0 :O
+    return &swap_slots[secno/8];
 }
 
 // Environment -> index in envs array
