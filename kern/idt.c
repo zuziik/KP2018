@@ -196,9 +196,11 @@ void int_dispatch(struct int_frame *frame)
     switch (frame->int_no) {
 
     case IRQ_KILL:
+        // OOM killer wants to kill this env
         lapic_eoi();
+        cprintf("%llx | %d\n", frame->err_code, frame->err_code);
+        cprintf("%llx | %d\n", frame->err_code & 100, frame->err_code & 100);
         panic("[int_dispatch] IRQ_KILL\n");
-        sched_yield();
     case IRQ_SUSPEND:
         lapic_eoi();
         panic("[int_dispatch] IRQ_SUSPEND\n");

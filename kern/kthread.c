@@ -186,8 +186,7 @@ void kthread_dummy() {
     for (c = cpus; c < cpus + ncpu; c++) {
         cprintf("cpuid = %d\n", c->cpu_id);
         if (c->cpu_id != thiscpu->cpu_id) {
-            // lapic_ipi(200);
-            lapic_test(c->cpu_id, IRQ_KILL);
+            lapic_ipi_target(c->cpu_id, IRQ_KILL);
         }
     }
 
