@@ -423,7 +423,7 @@ void env_remove_reverse_mappings(struct env *e) {
 
 	// Remove mappings for each page
 	for (i = 0; i < npages; i++) {
-		if (! pages[i].is_available) { // MATTHIJS: is this good?
+		if (pages[i].is_available == PAGE_FREE) {
 			continue;
 		}
 
@@ -643,6 +643,7 @@ void page_fault_queue_insert(uintptr_t fault_va) {
 	struct page_info *page;
 	physaddr_t *pt_entry = NULL;
 	page = page_lookup(curenv->env_pml4, (void *) fault_va, &pt_entry);
+	page->is_available = PAGE_SECOND_CHANCE;
 
 	// Corner cases: empty list
 	if (page_fault_head == NULL && page_fault_tail == NULL) {
@@ -665,31 +666,44 @@ void page_fault_queue_insert(uintptr_t fault_va) {
 }
 
 // Pop the head of the page fault list
-// TODO: implement CLOCK
+// With CLOCK (so using second chance)
+// Use the is_available flag as second chance flag
 struct page_info *page_fault_pop_head() {
-	struct page_info *page;
+	struct page_info *page = NULL;
 
 	// Page fault list is empty
 	if (page_fault_head == NULL) {
 		return NULL;
-	}
-
-	// Pop head and update
-	page = page_fault_head;
-	page_fault_head = page_fault_head->fault_prev;
-
-	// Check corner cases: empty list
-	if (page_fault_head != NULL) {
-		page_fault_head->fault_next = NULL;
-	} else {
-		// If head is NULL, tail is also NULL
+	} 
+	// Only 1 element in the list
+	else if (page_fault_head == page_fault_tail) {
+		page_fault_head = NULL;
 		page_fault_tail = NULL;
+		return page;
 	}
 
-	page->fault_next = NULL;
-	page->fault_prev = NULL;
+	// CLOCK: search for head with no second chance
+	// List is garanteed > 1
+	while (1) {
+		page = page_fault_head;
+		page_fault_head = page_fault_head->fault_prev;
+		page_fault_head->fault_next = NULL;
+		page->fault_next = NULL;
+		page->fault_prev = NULL;
 
-	return page;
+		// Append at the back
+		if (page->is_available == PAGE_SECOND_CHANCE) {
+			page_fault_tail->fault_prev = page;
+			page->fault_next = page_fault_tail;
+			page->fault_prev = NULL;
+			page_fault_tail = page;
+			page->is_available = PAGE_ALLOCATED;
+		}
+		// No second chance anymore, swap this
+		else {
+			return page;
+		}
+	}
 }
 
 //-----------------------------------------------------------------------------

@@ -38,7 +38,7 @@ void initial_merge(struct boot_info *boot_info) {
             page = pa2page(pa);
             if (start) {
                 // Not next to each other (aligned) or not in free list
-                if (page->is_available != 1 || 
+                if (page->is_available != PAGE_FREE || 
                     (start_huge != pa && pa != prev + PAGE_SIZE)) {
                     start = 0;
                 }
@@ -51,7 +51,7 @@ void initial_merge(struct boot_info *boot_info) {
                 for (m = start_huge + PAGE_SIZE; m < start_huge + SMALL_PAGES_IN_HUGE *
                      PAGE_SIZE; m += PAGE_SIZE) {
                     cur = pa2page(m);
-                    cur->is_available = 0;
+                    cur->is_available = PAGE_ALLOCATED;
 
                     // Is first entry
                     if (cur->previous == NULL) {
@@ -111,7 +111,7 @@ struct page_info *delete_from_free(int ishuge) {
         }
     }
 
-    cur->is_available = 0;
+    cur->is_available = PAGE_ALLOCATED;
     cur->pp_link = NULL;
     cur->previous = NULL;
     return cur;
@@ -143,7 +143,7 @@ void merge_after_free(struct page_info *target) {
         // Check if addresses are next to each other
         if (cur == NULL || (cur != huge_start && 
             page2pa(cur->previous) + PAGE_SIZE != page2pa(cur)) ||
-            cur->is_available != 1) {
+            cur->is_available != PAGE_FREE) {
             huge_start = NULL;
             break;
         }
@@ -169,7 +169,7 @@ void merge_after_free(struct page_info *target) {
                 }
             }
 
-            cur->is_available = 0;
+            cur->is_available = PAGE_ALLOCATED;
             cur->pp_link = NULL;
             cur->previous = NULL;
             cur = &cur[1];

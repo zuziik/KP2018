@@ -75,6 +75,8 @@ void kmain(struct boot_info *boot_info)
     ENV_CREATE(user_mapunmap, ENV_TYPE_USER);
     ENV_CREATE(user_mapunmap, ENV_TYPE_USER);
     ENV_CREATE(user_vmatest, ENV_TYPE_USER);
+    // ENV_CREATE(user_mempress, ENV_TYPE_USER);
+    // ENV_CREATE(user_mempress, ENV_TYPE_USER);
 #endif
 
     // Create some kernel threads

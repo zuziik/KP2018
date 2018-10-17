@@ -2,6 +2,12 @@
 
 #include <inc/x86-64/paging.h>
 
+enum {
+    PAGE_ALLOCATED = 0,
+    PAGE_FREE,
+    PAGE_SECOND_CHANCE
+};
+
 #ifndef __ASSEMBLER__
 /*
  * Page descriptor structures, mapped at UPAGES.
@@ -29,11 +35,11 @@ struct page_info {
     uint16_t is_huge;
     uint16_t pp_ref;
 
-    /* Is in the free list or not */
+    /* Is in the free list or not 
+     * LAB 7: -1 means second chance for CLOCK */
     uint16_t is_available;
 
     /* Linked list of VMAs that contain(ed) VAs mapping this physical page */
     struct env_mapping *reverse_mapping;
 };
 #endif /* !__ASSEMBLER__ */
-

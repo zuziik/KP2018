@@ -145,13 +145,12 @@ void mem_init(struct boot_info *boot_info)
      * 'npages' is the number of physical pages in memory.  Your code goes here.
      */
     pages = boot_alloc(sizeof(struct page_info)*npages);
-    
     for (i = 0; i < npages; i++) {
         pages[i].pp_link = NULL;
         pages[i].previous = NULL;
         pages[i].pp_ref = 0;
         pages[i].is_huge = 0;
-        pages[i].is_available = 0;
+        pages[i].is_available = PAGE_ALLOCATED;
         pages[i].fault_next = NULL;
         pages[i].fault_prev = NULL;
     }
@@ -160,7 +159,6 @@ void mem_init(struct boot_info *boot_info)
      * Allocate 'kthreads', list of all kernel threads
      */
     kthreads = boot_alloc(sizeof(struct kthread) * MAX_KTHREADS);
-
     // kthreads with id -1 are not used / not allocated
     for (i = 0; i < MAX_KTHREADS; i++) {
         kthreads[i].kt_id = -1;
@@ -172,7 +170,6 @@ void mem_init(struct boot_info *boot_info)
      * LAB 3: your code here.
      */
     envs = boot_alloc(sizeof(struct env) * NENV);
-
     for (i = 0; i < NENV; i++) {
         vma_list = boot_alloc(sizeof(struct vma)*MAX_VMAS);
         envs[i].vma_array = vma_list;
@@ -186,7 +183,6 @@ void mem_init(struct boot_info *boot_info)
         kthreads[i].top = boot_alloc(KTHREAD_STACK_SIZE);
         kthreads[i].start_rbp = (int64_t) kthreads[i].top;
     }
-
     /*********************************************************************
      * Now that we've allocated the initial kernel data structures, we set
      * up the list of free physical pages. Once we've done so, all further
@@ -295,6 +291,7 @@ void mem_init(struct boot_info *boot_info)
     // 0x10.... == 2^32 bit, theoretical max size of memory
     boot_map_region(kern_pml4, KERNEL_VMA, 0x100000000, 0, PAGE_WRITE);
 
+    // Some check functions break the counter, reset it
     struct page_info *tmp = page_free_list;
     int count = 0;
     while (tmp != NULL) {
@@ -305,8 +302,6 @@ void mem_init(struct boot_info *boot_info)
         }
         tmp = tmp->pp_link;
     }
-    cprintf("COUNT      = %d\n", count);
-    cprintf("nfreepages = %d\n", nfreepages);
     set_nfreepages(count);
 
     cprintf("[MEM_INIT] END\n");
@@ -424,7 +419,7 @@ void page_init(struct boot_info *boot_info)
                  (pa >= KERNEL_LMA && pa < end) ||
                   pa == PADDR(elf_hdr) ||
                   pa == MPENTRY_PADDR)) {
-                page->is_available = 1;
+                page->is_available = PAGE_FREE;
 
                 // Set next and previous
                 page->pp_link = page_free_list;
@@ -510,7 +505,7 @@ struct page_info *page_alloc(int alloc_flags)
             }
 
             tmp->is_huge = 0;
-            tmp->is_available = 0;
+            tmp->is_available = PAGE_ALLOCATED;
             tmp->pp_link = NULL;
             tmp->previous = NULL;
 
@@ -526,7 +521,7 @@ struct page_info *page_alloc(int alloc_flags)
                 page_free_list = &page[i];
 
                 page[i].is_huge = 0;
-                page[i].is_available = 1;
+                page[i].is_available = PAGE_FREE;
             }
             page_free_list->previous = NULL;
 
@@ -573,7 +568,7 @@ void page_free(struct page_info *pp)
     if (pp->pp_ref != 0) {
         panic("Failed to free a page with nonzero refcount");
     }
-    if (pp->is_available == 1) {
+    if (pp->is_available == PAGE_FREE) {
         panic("Attempt to double-free a page failed");
     }
 
@@ -587,7 +582,7 @@ void page_free(struct page_info *pp)
         page_free_list = pp;
     }
     pp->previous = NULL;
-    pp->is_available = 1;
+    pp->is_available = PAGE_FREE;
 
     // LAB 7
     // Update freepage counters
@@ -853,7 +848,7 @@ int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int per
     int lock1 = lock_page_unlock_env();
 
     // Remove it from freelist if it was free before
-    if (pp->pp_ref == 0 && pp->is_available == 1) {
+    if (pp->pp_ref == 0 && pp->is_available == PAGE_FREE) {
         // First entry
         if (pp->previous == NULL) {
             page_free_list = page_free_list->pp_link;
@@ -869,7 +864,7 @@ int page_insert(struct page_table *pml4, struct page_info *pp, void *va, int per
             }
         }
 
-        pp->is_available = 0;
+        pp->is_available = PAGE_ALLOCATED;
         pp->pp_link = NULL;
         pp->previous = NULL;
     }
