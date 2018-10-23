@@ -5,7 +5,6 @@
 enum {
     PAGE_ALLOCATED = 0,
     PAGE_FREE,
-    PAGE_SECOND_CHANCE
 };
 
 #ifndef __ASSEMBLER__
@@ -35,8 +34,7 @@ struct page_info {
     uint16_t is_huge;
     uint16_t pp_ref;
 
-    /* Is in the free list or not 
-     * LAB 7: 2 means second chance for CLOCK */
+    /* Is in the free list or not */
     uint16_t is_available;
 
     /* Linked list of VMAs that contain(ed) VAs mapping this physical page */

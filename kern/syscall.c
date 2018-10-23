@@ -391,6 +391,8 @@ int copy_pml4(struct env *old, struct env *new) {
                     pt_new->entries[v] = pt_old->entries[v];  
                     page = pa2page(PAGE_ADDR(pt_old->entries[v]));
                     page_increm(page);
+
+                    // LAB 7
                     add_reverse_mapping(new, (void *)(s << PML4_SHIFT | t << PDPT_SHIFT | u << PAGE_DIR_SHIFT | v << PAGE_TABLE_SHIFT), page, pt_old->entries[v] & PAGE_MASK);
                 }
             }
@@ -429,15 +431,7 @@ void check_vma(struct vma *old_vma, struct vma *new_vma) {
     cprintf("[CHECK_VMA] done\n");
 }
 
-
-
-
 // Fork: create a new env based on the parent, curenv
-// TODO:
-// - are values in new_env correct?
-// - memcpy or just new_env->... = curenv->...
-// - how to do COW
-// - what to return
 static int sys_fork(void)
 {
     /* fork() that follows COW semantics */
